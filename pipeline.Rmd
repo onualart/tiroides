@@ -1,0 +1,75 @@
+---
+title: "pipeline"
+author: "Oriol Nualart Mundó"
+date: "30/5/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Càrrega de l'arxiu *targets* complet.
+
+```{r}
+targets_big <- read.csv2("./data/targets.csv", header = TRUE, sep = ",")
+```
+
+
+Correcció dels noms de les mostres a *targets_all*.
+
+```{r}
+library(stringr)
+
+sample_names <- targets_big$Sample_Name
+
+sample_names <- str_replace_all(sample_names, "-", ".")
+
+targets_big$Sample_Name <- sample_names
+```
+
+
+
+Càrrega de l'arxiu *counts*.
+
+```{r}
+counts_big <- read.csv2("./data/counts.csv", header = TRUE, sep = ";")
+```
+
+
+Selecció aleatòria de mostres.
+
+```{r}
+set.seed(123)
+
+samplNIT <- sample(which(targets_big$Group == "NIT"), 10)
+
+samplSFI <- sample(which(targets_big$Group == "SFI"), 10)
+
+samplELI <- sample(which(targets_big$Group == "ELI"), 10)
+
+samples <- c(samplNIT, samplSFI, samplELI)
+```
+
+
+Creació d'un data frame *targets* que contingui només les mostres seleccionades.
+
+```{r}
+targets <- targets_big[samples,]
+```
+
+
+Creació d'un data frame *counts* que contingui només les mostres seleccionades.
+
+```{r}
+columns <- c("X", targets$Sample_Name)
+
+counts <- counts_big[columns]
+```
+
+
+
+
+
+
