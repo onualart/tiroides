@@ -63,12 +63,208 @@ targets <- targets_big[samples,]
 Creació d'un data frame *counts* que contingui només les mostres seleccionades.
 
 ```{r}
-columns <- c("X", targets$Sample_Name)
+columns <- targets$Sample_Name
 
 counts <- counts_big[columns]
+
+row.names(counts) <- counts_big$X
 ```
 
 
+Construcció de l'objecte *DESeqDataSet* a partir dels data frames *counts* i *targets*.
+
+```{r}
+library(DESeq2)
+
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                                  colData = targets,
+                                  design = ~ molecular_data_type + sex + Group)
+dds
+```
+
+
+Filtratge del *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1.
+
+```{r}
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+nrow(dds)
+```
+
+
+
+
+Estabilització de la variança amb la funció *vst*.
+
+```{r}
+vsd <- vst(dds)
+```
+
+
+Estabilització de la variança amb la funció *rlog*.
+
+```{r}
+rld <- rlog(dds)
+```
+
+Normalització.
+
+```{r}
+dds <- estimateSizeFactors(dds)
+```
+
+
+Comparació.
+
+```{r}
+library("dplyr")
+library("ggplot2")
+
+df <- bind_rows(
+  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"))
+
+colnames(df)[1:2] <- c("x", "y")  
+
+ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid( . ~ transformation)
+```
+
+
+Distància entre mostres.Heatmap.
+
+```{r}
+sampleDists <- dist(t(assay(vsd)))
+
+library("pheatmap")
+library("RColorBrewer")
+
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( vsd$Group, vsd$sex, sep = " - " )
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+```
+
+
+Gràfic de l'anàlisi de components principals.
+
+```{r}
+plotPCA(vsd, intgroup = c("Group", "sex"))
+```
+
+
+Anàlisi d'expressió diferencial.
+
+```{r}
+dds <- DESeq(dds, parallel =TRUE)
+```
+
+
+Mirem els resultats del contrast entre els grups "NIT" i "ELI".
+
+```{r}
+resNITvsELI <- results(dds, contrast=c("Group","ELI","NIT"))
+
+summary(resNITvsELI)
+```
+
+
+Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió negatiu més gran.
+
+```{r}
+resSigNITvsELI <- subset(resNITvsELI, padj < 0.1)
+head(resSigNITvsELI[ order(resSigNITvsELI$log2FoldChange), ])
+```
+
+
+Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió positiu més gran.
+
+```{r}
+head(resSigNITvsELI[ order(resSigNITvsELI$log2FoldChange, decreasing = TRUE), ])
+```
+
+
+Contrast entre els grups "NIT" i "SFI".
+
+```{r}
+resNITvsSFI <- results(dds, contrast=c("Group","SFI","NIT"))
+
+summary(resNITvsSFI)
+```
+
+Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió negatiu més gran.
+
+```{r}
+resSigNITvsSFI <- subset(resNITvsSFI, padj < 0.1)
+head(resSigNITvsSFI[ order(resSigNITvsSFI$log2FoldChange), ])
+```
+
+
+Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió positiu més gran.
+
+```{r}
+head(resSigNITvsSFI[ order(resSigNITvsSFI$log2FoldChange, decreasing = TRUE), ])
+```
+
+
+
+Mirem els resultats del contrast entre els grups "SFI" i "ELI".
+
+```{r}
+resSFIvsELI <- results(dds, contrast=c("Group","ELI","SFI"))
+
+summary(resSFIvsELI)
+```
+
+
+Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió negatiu més gran.
+
+```{r}
+resSigSFIvsELI <- subset(resSFIvsELI, padj < 0.1)
+head(resSigSFIvsELI[ order(resSigSFIvsELI$log2FoldChange), ])
+```
+
+
+Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió positiu més gran.
+
+```{r}
+head(resSigSFIvsELI[ order(resSigSFIvsELI$log2FoldChange, decreasing = TRUE), ])
+```
+
+
+MA plot.
+
+```{r}
+library("apeglm")
+resultsNames(dds)
+```
+
+
+```{r}
+shrNITvsELI <- lfcShrink(dds, coef="Group_NIT_vs_ELI", type="apeglm")
+
+plotMA(shrNITvsELI, ylim = c(-5, 5))
+```
+
+
+```{r}
+shrNITvsSFI <- lfcShrink(dds, coef="Group_NIT_vs_SFI", type="apeglm")
+
+plotMA(shrNITvsSFI, ylim = c(-5, 5))
+```
+
+
+
+```{r}
+shrSFIvsELI <- lfcShrink(dds, coef="Group_SFI_vs_ELI", type="apeglm")
+
+plotMA(shrSFIvsELI, ylim = c(-5, 5))
+```
 
 
 
