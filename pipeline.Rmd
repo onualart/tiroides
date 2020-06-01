@@ -67,7 +67,13 @@ columns <- targets$Sample_Name
 
 counts <- counts_big[columns]
 
-row.names(counts) <- counts_big$X
+X <- c()
+
+for (i in 1:length(counts_big$X)) {
+X[i] <- substring(counts_big$X[i], 1, 15)
+}
+
+row.names(counts) <- X
 ```
 
 
@@ -78,7 +84,7 @@ library(DESeq2)
 
 dds <- DESeqDataSetFromMatrix(countData = counts,
                                   colData = targets,
-                                  design = ~ molecular_data_type + sex + Group)
+                                  design = ~ sex + Group)
 dds
 ```
 
@@ -265,6 +271,80 @@ shrSFIvsELI <- lfcShrink(dds, coef="Group_SFI_vs_ELI", type="apeglm")
 
 plotMA(shrSFIvsELI, ylim = c(-5, 5))
 ```
+
+
+Agrupació de gens segons la variança (a partir de les dades amb variança reduïda mitjançant VSG).
+
+```{r}
+library("genefilter")
+topVarGenes <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 20)
+
+mat  <- assay(vsd)[topVarGenes, ]
+mat  <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(vsd)[, c("sex","Group")])
+pheatmap(mat, annotation_col = anno)
+```
+
+
+Afegim als resultats el *gene symbol* i l'*Entrez ID*.
+
+```{r}
+library("org.Hs.eg.db")
+library("AnnotationDbi")
+columns(org.Hs.eg.db)
+
+
+```
+
+```{r}
+resSigNITvsELI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsELI),
+                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+
+resSigNITvsELI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsELI),
+                                 column="ENTREZID", keytype="ENSEMBL",
+                                 multiVals="first")
+
+resSigNITvsSFI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsSFI),
+                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+
+resSigNITvsSFI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsSFI),
+                                 column="ENTREZID", keytype="ENSEMBL",
+                                 multiVals="first")
+
+resSigSFIvsELI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsELI),
+                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+
+resSigSFIvsELI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsELI),
+                                 column="ENTREZID", keytype="ENSEMBL",
+                                 multiVals="first")
+```
+
+
+Ordenació dels resultats.
+
+```{r}
+resOrdNITvsELI <- resSigNITvsELI[order(resSigNITvsELI$padj),]
+
+resOrdNITvsSFI <- resSigNITvsSFI[order(resSigNITvsSFI$padj),]
+
+resOrdSFIvsELI <- resSigSFIvsELI[order(resSigSFIvsELI$padj),]
+```
+
+
+Exportació dels resultats a arxius csv.
+
+```{r}
+dfNITvsELI <- as.data.frame(resOrdNITvsELI)
+write.csv(dfNITvsELI, file = "results/resultsNITvsELI.csv")
+
+dfNITvsSFI <- as.data.frame(resOrdNITvsSFI)
+write.csv(dfNITvsSFI, file = "results/resultsNITvsSFI.csv")
+
+dfSFIvsELI <- as.data.frame(resOrdSFIvsELI)
+write.csv(dfSFIvsELI, file = "results/resultsSFIvsELI.csv")
+```
+
+
 
 
 
