@@ -1,14 +1,53 @@
 ---
-title: "pipeline"
+title: "Anàlisi de Dades Òmiques PAC2"
 author: "Oriol Nualart Mundó"
 date: "30/5/2020"
 output: pdf_document
+bibliography: bibliography.bib
+link-citations: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+#### Enllaç al repositori de GitHub associat a la PAC: <https://github.com/onualart/tiroides.git>
+
+***	
+
+## CONTINGUTS
+
+
+
+***	
+
+\newpage
+
+## 1. Abstract
+
+El projecte Genotype-Tissue Expression (GTEx) pretén crear una gran base de dades pública amb informació de l'expressió i regulació gènica en 54 teixits, obtinguda de gairebé 1000 individus, i inclou dades de RNA-seq.
+
+En aquesta anàlisi, partim d'una selecció aleatòria de dades de RNA-seq de mostres de tiroides tretes del projecte GTEx, tant de teixit sa com de teixit parcialment i extensament infiltrat, per detectar gens diferencialment expressatas i buscar patrons biològicament significatius.
+
+
+***
+
+## 2. Objectius
+
+
+
+***
+
+## 3. Materials i mètodes
+
+###     3.1. Disseny de l'experiment
+
+
+
+###     3.2. Procediment d'anàlisi de les dades
+
+###        3.2.1. Preparació de les dades
 
 Càrrega de l'arxiu *targets* complet.
 
@@ -74,6 +113,7 @@ X[i] <- substring(counts_big$X[i], 1, 15)
 }
 
 row.names(counts) <- X
+colnames(counts) <- targets$ShortName
 ```
 
 
@@ -84,70 +124,69 @@ library(DESeq2)
 
 dds <- DESeqDataSetFromMatrix(countData = counts,
                                   colData = targets,
-                                  design = ~ sex + Group)
+                                  design = ~ sex + Group + sex:Group)
 dds
 ```
 
 
-Filtratge del *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1.
+###        3.2.2. Control de qualitat.
+
+Per fer el control de qualitat primer transformem les dades en *pseudocounts* utilitzant la fórmula $y = log_{2}(K+1)$. Això ens permetrà visualitzar la distribució de les dades, ja que les dades crues queden massa concentrades en els gràfics.
 
 ```{r}
-dds <- dds[ rowSums(counts(dds)) > 1, ]
-nrow(dds)
+pseudoCounts <- log2(counts + 1)
 ```
 
 
-
-
-Estabilització de la variança amb la funció *vst*.
+Generem un boxplot per comparar les mostres.
 
 ```{r}
-vsd <- vst(dds)
+library(reshape2)
+library(ggplot2)
+df <- melt(pseudoCounts, variable.name = "Samples")
+df$Grup <- c(rep("NIT", 562020), rep("SFI", 562020), rep("ELI", 562020))
+ggplot(df, aes(x = Samples, y = value)) + geom_boxplot(aes(fill = factor(Grup))) + xlab("Mostra") +
+ylab(expression(log[2](count + 1))) + theme(axis.text.x = element_text(angle = 65, hjust = 1.2, vjust = 1.2))
 ```
 
+No observem grans diferències entre les mostres. L'única que potser destaca és la mostra R55G_ELI, que té un número de *counts* inferior a la resta.
 
-Estabilització de la variança amb la funció *rlog*.
+
+
+Comparem les mostres també amb un histograma.
+
+```{r}
+ggplot(df, aes(x = value, colour = Samples)) + ylim(c(0, 0.17)) + xlim(c(0, 17)) +
+geom_density(alpha = 0.2, size = 0.75)  +
+theme(legend.position = "top") + xlab(expression(log[2](count + 1)))
+```
+
+De nou, trobem que en general no hi ha grans variacions entre les mostres, excepte en el cas de R55G_ELI, que en aquest gràfic sí que es veu més clarament diferenciada.
+
+De totes maneres, amb el que podem veure en els gràfics (la distribució dels quartils i els *outliers* al *boxplot*, i la forma de la corva a l'histograma), és probable que això afecti de forma semblant a tots els gens, i en aquest cas quedarà en part corregit amb la normalització.
+
+Es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta del grup, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
+
+
+
+
+Per generar la resta de gràfics del control de qualitat ens convé estabilitzar la variança. Ho farem amb la funció *rlog*, i no amb l'alternativa *vst*, ja que el temps de computació no és un problema.
 
 ```{r}
 rld <- rlog(dds)
-```
-
-Normalització.
-
-```{r}
-dds <- estimateSizeFactors(dds)
-```
-
-
-Comparació.
-
-```{r}
-library("dplyr")
-library("ggplot2")
-
-df <- bind_rows(
-  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
-         mutate(transformation = "log2(x + 1)"),
-  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
-  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"))
-
-colnames(df)[1:2] <- c("x", "y")  
-
-ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
-  coord_fixed() + facet_grid( . ~ transformation)
 ```
 
 
 Distància entre mostres.Heatmap.
 
 ```{r}
-sampleDists <- dist(t(assay(vsd)))
+sampleDists <- dist(t(assay(rld)))
 
 library("pheatmap")
 library("RColorBrewer")
 
 sampleDistMatrix <- as.matrix( sampleDists )
-rownames(sampleDistMatrix) <- paste( vsd$Group, vsd$sex, sep = " - " )
+rownames(sampleDistMatrix) <- paste( vsd$ShortName, vsd$sex, sep = " - " )
 colnames(sampleDistMatrix) <- NULL
 colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
 pheatmap(sampleDistMatrix,
@@ -160,8 +199,36 @@ pheatmap(sampleDistMatrix,
 Gràfic de l'anàlisi de components principals.
 
 ```{r}
-plotPCA(vsd, intgroup = c("Group", "sex"))
+plotPCA(rld, intgroup = c("Group", "sex"))
 ```
+
+
+
+
+
+
+
+
+Per generar la resta de gràfics del control de qualitat, primer filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1.
+
+```{r}
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+nrow(dds)
+```
+
+
+Correcció de la profunditat de seqüenciació.
+
+```{r}
+dds <- estimateSizeFactors(dds)
+```
+
+
+
+
+
+
+
 
 
 Anàlisi d'expressió diferencial.
