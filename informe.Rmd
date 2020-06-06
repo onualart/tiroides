@@ -123,13 +123,14 @@ Construcció de l'objecte *DESeqDataSet* a partir dels data frames *counts* i *t
 library(DESeq2)
 
 dds <- DESeqDataSetFromMatrix(countData = counts,
-                                  colData = targets,
-                                  design = ~ sex + Group + sex:Group)
+                              colData = targets,
+                              design = ~ sex + Group)
+dds$Group <- factor(dds$Group, levels = c("NIT","SFI", "ELI"))
 dds
 ```
 
 
-###        3.2.2. Control de qualitat.
+###        3.2.2. Control de qualitat i filtratge.
 
 Per fer el control de qualitat primer transformem les dades en *pseudocounts* utilitzant la fórmula $y = log_{2}(K+1)$. Això ens permetrà visualitzar la distribució de les dades, ja que les dades crues queden massa concentrades en els gràfics.
 
@@ -168,9 +169,16 @@ De totes maneres, amb el que podem veure en els gràfics (la distribució dels q
 Es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta del grup, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
 
 
-
-
 Per generar la resta de gràfics del control de qualitat ens convé estabilitzar la variança. Ho farem amb la funció *rlog*, i no amb l'alternativa *vst*, ja que el temps de computació no és un problema.
+
+Abans, però, filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1.
+
+```{r}
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+nrow(dds)
+```
+
+
 
 ```{r}
 rld <- rlog(dds)
@@ -186,7 +194,7 @@ library("pheatmap")
 library("RColorBrewer")
 
 sampleDistMatrix <- as.matrix( sampleDists )
-rownames(sampleDistMatrix) <- paste( vsd$ShortName, vsd$sex, sep = " - " )
+rownames(sampleDistMatrix) <- paste( rld$ShortName, rld$sex, sep = " - " )
 colnames(sampleDistMatrix) <- NULL
 colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
 pheatmap(sampleDistMatrix,
@@ -203,186 +211,181 @@ plotPCA(rld, intgroup = c("Group", "sex"))
 ```
 
 
-
-
-
-
-
-
-Per generar la resta de gràfics del control de qualitat, primer filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1.
+Un altre gràfic que podem fer per veure com s'agrupen les mostres és un heatmap de la variança dels 20 gens amb expressió més variable. Per fer-lo, treballem a partir de les dades amb variança reduïda mitjançant RLOG.
 
 ```{r}
-dds <- dds[ rowSums(counts(dds)) > 1, ]
-nrow(dds)
+library("genefilter")
+topVarGenes <- head(order(rowVars(assay(rld)), decreasing = TRUE), 20)
+
+mat  <- assay(rld)[topVarGenes, ]
+mat  <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(rld)[, c("sex","Group")])
+pheatmap(mat, annotation_col = anno)
 ```
 
+Observem que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexes.
 
-Correcció de la profunditat de seqüenciació.
+###        3.2.3. Normalització.
+
+Per tenir en compte les diferències sistemàtiques d'orígen tècnic entre mostres, apliquem una normalització. Aquesta consisteix en multiplicar el número de *counts* de cada mostra del nostre *DESeqDataSet* per una constant *C_{j}* que calculem a partir de les dades de *counts* de la mateixa mostra. El tipus de normalització que apliquem variarà en funció del tipus de càlcul que fem per obtenir *C_{j}*.
+
+En aquest cas utilitzarem el mètode RLE (*Relative Log Expression*, Anders and Huber 2010), que, partint de la mitjana geomètrica de l'expressió entre mostres, crea una "mostra de pseudo-referència" sobre la qual centrar les dades de les diferents mostres. Després de centrar les dades, busca la mitjana entre gens per a cada mostra.
+
+Aquest mètode es pot implementar amb la funció *estimateSizeFactors* del paquet *DESeq2*.
+
 
 ```{r}
 dds <- estimateSizeFactors(dds)
 ```
 
 
+###        3.2.4. Anàlisi d'expressió diferencial.
 
+L'anàlisi d'expressió diferencial consisteix en fer, per a cada contrast d'interès, tests de significació en un model binomial negatiu. Els paràmetres del model són desconeguts, però podem obtenir-ne una estimació.
 
+La funció *estimateDispersions* del paquet *DESeq2* fa una estimació dels paràmetres de dispersió de les dades, a partir de la qual podrem obtenir els paràmetres del model.
 
+* Primer fa un càlcul preliminar de la dispersió de cada gen mitjançant una estimació per màxima veosimilitud (McCarthy, Chen, and Smyth 2012).
 
-
-
-
-Anàlisi d'expressió diferencial.
+* Després encongieix els valors acostant-los a la corva ajustada definida per aquesta mateixa estimació preliminar.
 
 ```{r}
-dds <- DESeq(dds, parallel =TRUE)
+dds <- estimateDispersions(dds)
 ```
 
 
-Mirem els resultats del contrast entre els grups "NIT" i "ELI".
+Un cop estimats els paràmetres de dispersió podem passar a fer l'anàlisi d'expressió diferencial en sí. Convé recordar que al crear l'objecte *DESeqDataSet* ja hem especificat els factors que volem incloure a la nostra matriu de disseny.
+
+La funció *nbinomWaldTest* del paquet *DESeq2* fa el càlcul del test per a cada gen dintre de cada comparació, i afegeix els resultats al *DESeqDataSet* com a metadades. Aquests resultats inclouen el Log_{2} del fold-change, el p-valor i el p-valor ajustat del contrast.
+
 
 ```{r}
-resNITvsELI <- results(dds, contrast=c("Group","ELI","NIT"))
-
-summary(resNITvsELI)
+dds <- nbinomWaldTest(dds)
 ```
 
 
-Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió negatiu més gran.
+Utilitzem la funció *results* per explorar els resultats dels diferents contrasts.
+
+Entre els grups "ELI" i "NIT", mirem primer un resum dels resultats.
 
 ```{r}
-resSigNITvsELI <- subset(resNITvsELI, padj < 0.1)
-head(resSigNITvsELI[ order(resSigNITvsELI$log2FoldChange), ])
+resELIvsNIT <- results(dds, contrast=c("Group","NIT","ELI"))
+
+summary(resELIvsNIT)
 ```
 
 
-Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió positiu més gran.
+També mirem alguns dels valors associats als gens que tenen un diferencial d'expressió positiu i negatiu més gran.
 
 ```{r}
-head(resSigNITvsELI[ order(resSigNITvsELI$log2FoldChange, decreasing = TRUE), ])
+resSigELIvsNIT <- subset(resELIvsNIT, padj < 0.1)
+valSigELIvsNIT <- resSigELIvsNIT[c("log2FoldChange", "pvalue", "padj")]
+head(valSigELIvsNIT[ order(valSigELIvsNIT$log2FoldChange, decreasing = TRUE), ], 3)
+head(valSigELIvsNIT[ order(valSigELIvsNIT$log2FoldChange), ], 3)
 ```
 
 
-Contrast entre els grups "NIT" i "SFI".
+També fem un MA plot del contrast. Per fer-lo, primer hem d'encongir el log2 dels fold changes amb la funció *lfcShrink*.
 
 ```{r}
-resNITvsSFI <- results(dds, contrast=c("Group","SFI","NIT"))
-
-summary(resNITvsSFI)
+shrELIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","ELI"))
+plotMA(shrELIvsNIT, ylim = c(-5, 5))
 ```
 
-Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió negatiu més gran.
+Observem que en el teixit infiltrat, respecte el no infiltrat, hi ha un major nombre de gens inhibits que de gens sobreexpressats, i aquests gens inhibits mostren un major fold change i un nivell més alt de significació (un p-valor més petit). Això segurament s'explica perquè les diferències d'expressió en el teixit infiltrat tendeixen per naturalesa a ser en forma d'inhibició de molts gens reguladors.
+
+
+Explorem el contrast entre els grups "SFI" i "NIT".
 
 ```{r}
-resSigNITvsSFI <- subset(resNITvsSFI, padj < 0.1)
-head(resSigNITvsSFI[ order(resSigNITvsSFI$log2FoldChange), ])
-```
+resSFIvsNIT <- results(dds, contrast=c("Group","NIT","SFI"))
 
-
-Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió positiu més gran.
-
-```{r}
-head(resSigNITvsSFI[ order(resSigNITvsSFI$log2FoldChange, decreasing = TRUE), ])
+summary(resSFIvsNIT)
 ```
 
 
-
-Mirem els resultats del contrast entre els grups "SFI" i "ELI".
-
 ```{r}
-resSFIvsELI <- results(dds, contrast=c("Group","ELI","SFI"))
-
-summary(resSFIvsELI)
-```
-
-
-Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió negatiu més gran.
-
-```{r}
-resSigSFIvsELI <- subset(resSFIvsELI, padj < 0.1)
-head(resSigSFIvsELI[ order(resSigSFIvsELI$log2FoldChange), ])
-```
-
-
-Mirem els gens que hem considerat significatius que tenen un diferencial d'expressió positiu més gran.
-
-```{r}
-head(resSigSFIvsELI[ order(resSigSFIvsELI$log2FoldChange, decreasing = TRUE), ])
+resSigSFIvsNIT <- subset(resSFIvsNIT, padj < 0.1)
+valSigSFIvsNIT <- resSigSFIvsNIT[c("log2FoldChange", "pvalue", "padj")]
+head(valSigSFIvsNIT[ order(valSigSFIvsNIT$log2FoldChange, decreasing = TRUE), ], 3)
+head(valSigSFIvsNIT[ order(valSigSFIvsNIT$log2FoldChange), ], 3)
 ```
 
 
 MA plot.
 
 ```{r}
-library("apeglm")
-resultsNames(dds)
+shrSFIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","SFI"))
+
+plotMA(shrSFIvsNIT, ylim = c(-5, 5))
+```
+
+
+En aquest cas també trobem diferències en el mateix sentit: el grup de teixit parcialment infiltrat té més gens inhibits que gens sobreexpressats respecte el grup de teixit no infiltrat. La diferència és que el número de gens diferencialment expressats és menor que en l'anterior comparació.
+
+
+Explorem els resultats del contrast entre els grups "ELI" i "SFI".
+
+```{r}
+resELIvsSFI <- results(dds, contrast=c("Group","SFI","ELI"))
+
+summary(resELIvsSFI)
 ```
 
 
 ```{r}
-shrNITvsELI <- lfcShrink(dds, coef="Group_NIT_vs_ELI", type="apeglm")
-
-plotMA(shrNITvsELI, ylim = c(-5, 5))
+resSigELIvsSFI <- subset(resELIvsSFI, padj < 0.1)
+valSigELIvsSFI <- resSigELIvsSFI[c("log2FoldChange", "pvalue", "padj")]
+head(valSigELIvsSFI[ order(valSigELIvsSFI$log2FoldChange, decreasing = TRUE), ], 3)
+head(valSigELIvsSFI[ order(valSigELIvsSFI$log2FoldChange), ], 3)
 ```
 
 
 ```{r}
-shrNITvsSFI <- lfcShrink(dds, coef="Group_NIT_vs_SFI", type="apeglm")
+shrELIvsSFI <- lfcShrink(dds, contrast=c("Group","SFI","ELI"))
 
-plotMA(shrNITvsSFI, ylim = c(-5, 5))
+plotMA(shrELIvsSFI, ylim = c(-5, 5))
 ```
 
+En aquest cas estem comparant un grup de mostres de teixit extensament infiltrat amb un grup de mostres de teixit parcialment infiltrat. Observem que hi ha força gens diferencialment expressats, però en aquest cas no n'hi ha gaires més d'inhibits que de sobreexpressats. Tant el fold change com el nivell de significació dels gens més diferencialment expressats són menors que en les anteriors comparacions.
 
 
-```{r}
-shrSFIvsELI <- lfcShrink(dds, coef="Group_SFI_vs_ELI", type="apeglm")
+###        3.2.5. Anotació dels resultats.
 
-plotMA(shrSFIvsELI, ylim = c(-5, 5))
-```
-
-
-Agrupació de gens segons la variança (a partir de les dades amb variança reduïda mitjançant VSG).
+Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.
 
 ```{r}
-library("genefilter")
-topVarGenes <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 20)
-
-mat  <- assay(vsd)[topVarGenes, ]
-mat  <- mat - rowMeans(mat)
-anno <- as.data.frame(colData(vsd)[, c("sex","Group")])
-pheatmap(mat, annotation_col = anno)
-```
-
-
-Afegim als resultats el *gene symbol* i l'*Entrez ID*.
-
-```{r}
-library("org.Hs.eg.db")
+library("EnsDb.Hsapiens.v86")
 library("AnnotationDbi")
-columns(org.Hs.eg.db)
 
-
+columns(EnsDb.Hsapiens.v86)
 ```
 
 ```{r}
-resSigNITvsELI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsELI),
-                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+keytypes(EnsDb.Hsapiens.v86)
+```
 
-resSigNITvsELI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsELI),
-                                 column="ENTREZID", keytype="ENSEMBL",
+
+```{r}
+resSigELIvsNIT$symbol  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsNIT),
+                                 column="SYMBOL", keytype="GENEID", multiVals="first")
+
+resSigELIvsNIT$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsNIT),
+                                 column="ENTREZID", keytype="GENEID",
                                  multiVals="first")
 
-resSigNITvsSFI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsSFI),
-                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+resSigSFIvsNIT$symbol  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigSFIvsNIT),
+                                 column="SYMBOL", keytype="GENEID", multiVals="first")
 
-resSigNITvsSFI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigNITvsSFI),
-                                 column="ENTREZID", keytype="ENSEMBL",
+resSigSFIvsNIT$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigSFIvsNIT),
+                                 column="ENTREZID", keytype="GENEID",
                                  multiVals="first")
 
-resSigSFIvsELI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsELI),
-                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+resSigELIvsSFI$symbol  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsSFI),
+                                 column="SYMBOL", keytype="GENEID", multiVals="first")
 
-resSigSFIvsELI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsELI),
-                                 column="ENTREZID", keytype="ENSEMBL",
+resSigELIvsSFI$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsSFI),
+                                 column="ENTREZID", keytype="GENEID",
                                  multiVals="first")
 ```
 
@@ -390,33 +393,29 @@ resSigSFIvsELI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsELI),
 Ordenació dels resultats.
 
 ```{r}
-resOrdNITvsELI <- resSigNITvsELI[order(resSigNITvsELI$padj),]
+resOrdELIvsNIT <- resSigELIvsNIT[order(resSigELIvsNIT$padj),]
 
-resOrdNITvsSFI <- resSigNITvsSFI[order(resSigNITvsSFI$padj),]
+resOrdSFIvsNIT <- resSigSFIvsNIT[order(resSigSFIvsNIT$padj),]
 
-resOrdSFIvsELI <- resSigSFIvsELI[order(resSigSFIvsELI$padj),]
+resOrdELIvsSFI <- resSigELIvsSFI[order(resSigELIvsSFI$padj),]
 ```
 
 
 Exportació dels resultats a arxius csv.
 
 ```{r}
-dfNITvsELI <- as.data.frame(resOrdNITvsELI)
-write.csv(dfNITvsELI, file = "results/resultsNITvsELI.csv")
+dfELIvsNIT <- as.data.frame(resOrdELIvsNIT)
+write.csv(dfELIvsNIT, file = "results/resultsELIvsNIT.csv")
 
-dfNITvsSFI <- as.data.frame(resOrdNITvsSFI)
-write.csv(dfNITvsSFI, file = "results/resultsNITvsSFI.csv")
+dfSFIvsNIT <- as.data.frame(resOrdSFIvsNIT)
+write.csv(dfSFIvsNIT, file = "results/resultsSFIvsNIT.csv")
 
-dfSFIvsELI <- as.data.frame(resOrdSFIvsELI)
-write.csv(dfSFIvsELI, file = "results/resultsSFIvsELI.csv")
+dfELIvsSFI <- as.data.frame(resOrdELIvsSFI)
+write.csv(dfELIvsSFI, file = "results/resultsELIvsSFI.csv")
 ```
 
 
-Eliminació d'efectes de lot ocults.
 
-```{r}
-
-```
 
 
 
