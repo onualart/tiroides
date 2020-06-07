@@ -35,7 +35,9 @@ En aquesta anàlisi, partim d'una selecció aleatòria de dades de RNA-seq de mo
 
 ## 2. Objectius
 
+L'objectiu d'aquesta anàlisi és identificar gens que s'expressen diferencialment entre els grups de teixits, i a partir d'aquests gens expressats diferencialment, identificar *pathways* alterats en les comparacions.
 
+Aquesta informació pot aportar coneixements sobre els processos subjacents a la infiltració linfoide de la tiroides, i pot ajudar a identificar potencials dianes terapèutiques.
 
 ***
 
@@ -43,69 +45,105 @@ En aquesta anàlisi, partim d'una selecció aleatòria de dades de RNA-seq de mo
 
 ###     3.1. Disseny de l'experiment
 
+Disposem de les dades corresponents a un total de 296 mostres de teixit de tiroides (que formen part del projecte GTEx), de les quals:
+
+- 236 corresponen a teixit no infiltrat (NIT)
+
+- 42 corresponen a teixits amb petits infiltrats focals (SFI)
+
+- 14 corresponen a teixit amb infiltrats limfoides extensos (ELI).
+
+Les mostres corresponen tant a homes com a dones i les dades inclouen el paràmetre del sexe.
+
+Seleccionarem aleatòriament 10 mostres de cada grup, i a partir d'aquests subconjunts farem l'anàlisi. Aquesta inclourà les tres comparacions possibles entre els tres grups.
 
 
-###     3.2. Procediment d'anàlisi de les dades
+###     3.2. Software utilitzat
 
-###        3.2.1. Preparació de les dades
+Fer fer aquesta anàlisi s'ha utilitzat R v3.6.3 (2020-02-29). Els paquets de R i Bioconductor utilitzats són:
 
-Càrrega de l'arxiu *targets* complet.
+- stringr
+- dplyr
+- DESeq2
+- reshape2
+- ggplot2
+- pheatmap
+- RColorBrewer
+- genefilter
+- EnsDb.Hsapiens.v86
+- AnnotationDbi
+- org.Hs.eg.db
+- clusterProfiler
+
+
+###     3.3. Procediment d'anàlisi de les dades
+
+El procediment detallat amb tot el codi de R utilitzat, juntament amb l'*output* dels fragments de codi, es pot trobar a l'arxiu "pipeline.pdf" al repositori de GitHub, generat a partir de l'arxiu de markdown "pipeline.Rmd". El codi pressuposa tenir instal·lats aquests paquets.
+
+
+###        3.3.1. Preparació de les dades
+
+Partim de dos arxius csv, un d'ells amb la taula de *counts*, amb les mostres com a columnes i els gens com a files, i l'altre amb la taula *targets*, que conté la informació sobre les mostres.
+
+El primer que fem és carregar els arxius *targets* i *counts* com a *data frames* (que anomenem *targets_big* i *counts_big*). Corregim el nom amb què estan etiquetades les mostres a *targets_big* per que el format es correspongui amb el dels noms que apareixen a *counts_big*. (Ja que el que a *targets_big* apareix com a guions, a *counts_big* són punts.) 
 
 ```{r}
 targets_big <- read.csv2("./data/targets.csv", header = TRUE, sep = ",")
-```
 
+counts_big <- read.csv2("./data/counts.csv", header = TRUE, sep = ";")
 
-Correcció dels noms de les mostres a *targets_all*.
-
-```{r}
 library(stringr)
 
 sample_names <- targets_big$Sample_Name
-
 sample_names <- str_replace_all(sample_names, "-", ".")
-
 targets_big$Sample_Name <- sample_names
 ```
 
 
+Un cop tenim els dos *data frames*, fem la selecció aleatòria de les 10 mostres de cada grup que necessitem per a l'anàlisi.
 
-Càrrega de l'arxiu *counts*.
-
-```{r}
-counts_big <- read.csv2("./data/counts.csv", header = TRUE, sep = ";")
-```
-
-
-Selecció aleatòria de mostres.
+Primer establim la "llavor" que ens permetrà fer reproduïble la selecció pseudoaleatòria amb la funció *set.seed*.
 
 ```{r}
 set.seed(123)
+```
+
+
+Després utilitzem la funció *sample* del paquet *dplyr* per seleccionar els números de fila dintre del *data frame* *targets_big* corresponents a deu mostres a l'atzar del grup "NIT", a deu del grup "SFI" i a deu del grup "ELI". Aquests números de fila els posem en un vector.
+
+```{r}
+library(dplyr)
 
 samplNIT <- sample(which(targets_big$Group == "NIT"), 10)
-
 samplSFI <- sample(which(targets_big$Group == "SFI"), 10)
-
 samplELI <- sample(which(targets_big$Group == "ELI"), 10)
 
 samples <- c(samplNIT, samplSFI, samplELI)
 ```
 
 
-Creació d'un data frame *targets* que contingui només les mostres seleccionades.
+Tot seguit creem un data frame *targets* reduït que conté només les mostres seleccionades.
 
 ```{r}
 targets <- targets_big[samples,]
 ```
 
 
-Creació d'un data frame *counts* que contingui només les mostres seleccionades.
+Utilitzant els noms de les mostres segons aquest *data frame targets* reduït, creem un data frame *counts* que contingui només les mostres seleccionades.
 
 ```{r}
 columns <- targets$Sample_Name
-
 counts <- counts_big[columns]
+```
 
+
+Finalment, de cara a poder fer alguns dels procediments de més endavant, corregim el nom de les files i columnes de *counts*.
+
+Del nom de les files, que correspon a l'identificador Ensembl dels gens, n'eliminem el número de versió de la part final, deixant només l'identificador en sí.
+
+El nom de les columnes, que és l'identificador de les mostres, el substituïm pel "ShortName", que resulta més manejable.
+
+```{r}
 X <- c()
 
 for (i in 1:length(counts_big$X)) {
@@ -117,7 +155,7 @@ colnames(counts) <- targets$ShortName
 ```
 
 
-Construcció de l'objecte *DESeqDataSet* a partir dels data frames *counts* i *targets*.
+A partir dels dos *data frames* construïm l'objecte *DESeqDataSet* que utilitzarem per fer l'anàlisi (amb la funció *DESeqDataSetFromMatrix* del paquet *DESeq2*). Al crear-lo, especifiquem els factors que volem incloure en el disseny, en aquest cas els paràmetres *sex* i *Group*. Després, amb la funció *factor* especifiquem que volem incloure al disseny els tres nivells del factor *Group*, i que "NIT" és el nivell de referència.
 
 ```{r}
 library(DESeq2)
@@ -130,9 +168,11 @@ dds
 ```
 
 
-###        3.2.2. Control de qualitat i filtratge.
+###        3.3.2. Control de qualitat i filtratge
 
-Per fer el control de qualitat primer transformem les dades en *pseudocounts* utilitzant la fórmula $y = log_{2}(K+1)$. Això ens permetrà visualitzar la distribució de les dades, ja que les dades crues queden massa concentrades en els gràfics.
+Per fer els primers gràfics del control de qualitat partirem de les dades del *data frame counts*.
+
+Primer transformem les dades en *pseudocounts* utilitzant la fórmula $y = log_{2}(K+1)$. Això ens permetrà visualitzar la dier resultar útils.
 
 ```{r}
 pseudoCounts <- log2(counts + 1)
@@ -166,26 +206,28 @@ De nou, trobem que en general no hi ha grans variacions entre les mostres, excep
 
 De totes maneres, amb el que podem veure en els gràfics (la distribució dels quartils i els *outliers* al *boxplot*, i la forma de la corva a l'histograma), és probable que això afecti de forma semblant a tots els gens, i en aquest cas quedarà en part corregit amb la normalització.
 
-Es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta del grup, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
+Es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta de mostres, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
 
 
 Per generar la resta de gràfics del control de qualitat ens convé estabilitzar la variança. Ho farem amb la funció *rlog*, i no amb l'alternativa *vst*, ja que el temps de computació no és un problema.
 
-Abans, però, filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1.
+Abans, però, filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1, que no ens aportarien cap informació però aportarien soroll innecessari.
 
 ```{r}
+nrow(dds)
+
 dds <- dds[ rowSums(counts(dds)) > 1, ]
 nrow(dds)
 ```
 
-
+Comprovem que el filtratge redueix el número de gens a 43364.
 
 ```{r}
 rld <- rlog(dds)
 ```
 
 
-Distància entre mostres.Heatmap.
+Un cop estabilitzada la variança, podem fer una ullada a la distància entre mostres. Ho fem amb un *heatmap* que compara cada mostra amb les altres.
 
 ```{r}
 sampleDists <- dist(t(assay(rld)))
@@ -193,7 +235,7 @@ sampleDists <- dist(t(assay(rld)))
 library("pheatmap")
 library("RColorBrewer")
 
-sampleDistMatrix <- as.matrix( sampleDists )
+sampleDistMatrix <- as.matrix(sampleDists)
 rownames(sampleDistMatrix) <- paste( rld$ShortName, rld$sex, sep = " - " )
 colnames(sampleDistMatrix) <- NULL
 colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
@@ -225,7 +267,7 @@ pheatmap(mat, annotation_col = anno)
 
 Observem que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexes.
 
-###        3.2.3. Normalització.
+###        3.3.3. Normalització
 
 Per tenir en compte les diferències sistemàtiques d'orígen tècnic entre mostres, apliquem una normalització. Aquesta consisteix en multiplicar el número de *counts* de cada mostra del nostre *DESeqDataSet* per una constant *C_{j}* que calculem a partir de les dades de *counts* de la mateixa mostra. El tipus de normalització que apliquem variarà en funció del tipus de càlcul que fem per obtenir *C_{j}*.
 
@@ -239,7 +281,7 @@ dds <- estimateSizeFactors(dds)
 ```
 
 
-###        3.2.4. Anàlisi d'expressió diferencial.
+###        3.3.4. Anàlisi d'expressió diferencial
 
 L'anàlisi d'expressió diferencial consisteix en fer, per a cada contrast d'interès, tests de significació en un model binomial negatiu. Els paràmetres del model són desconeguts, però podem obtenir-ne una estimació.
 
@@ -350,7 +392,7 @@ plotMA(shrELIvsSFI, ylim = c(-5, 5))
 En aquest cas estem comparant un grup de mostres de teixit extensament infiltrat amb un grup de mostres de teixit parcialment infiltrat. Observem que hi ha força gens diferencialment expressats, però en aquest cas no n'hi ha gaires més d'inhibits que de sobreexpressats. Tant el fold change com el nivell de significació dels gens més diferencialment expressats són menors que en les anteriors comparacions.
 
 
-###        3.2.5. Anotació dels resultats.
+###        3.3.5. Anotació dels resultats
 
 Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.
 
@@ -413,6 +455,94 @@ write.csv(dfSFIvsNIT, file = "results/resultsSFIvsNIT.csv")
 dfELIvsSFI <- as.data.frame(resOrdELIvsSFI)
 write.csv(dfELIvsSFI, file = "results/resultsELIvsSFI.csv")
 ```
+
+
+###        3.3.6. Comparació entre comparacions
+
+
+Podem comparar els diferents contrastos per veure quins gens diferencialment expressats tenen en comú.
+
+En aquest cas, farem un diagrama de Venn amb els gens que mostren un  log_{2} fold-change superior a 1.
+
+
+```{r}
+selectedELIvsNIT <- (abs(dfELIvsNIT$log2FoldChange) > 1)
+selectedSFIvsNIT <- (abs(dfSFIvsNIT$log2FoldChange) > 1)
+selectedELIvsSFI <- (abs(dfELIvsSFI$log2FoldChange) > 1)
+
+selected <- cbind(selectedELIvsNIT, selectedSFIvsNIT, selectedELIvsSFI)
+colnames(selected) <- c("ELI vs NIT", "SFI vs NIT", "ELI vs SFI")
+
+selectedCounts <- vennCounts(selected)
+```
+
+
+```{r}
+vennDiagram(selectedCounts, cex=0.9)
+title("Gens diferencialment expressats segons cada comparació.")
+```
+
+Observem que els dos contrastos que comparen teixit infiltrat amb no infiltrat (ELI vs NIT i SFI vs NIT) comparteixen la majoria de gens diferencialment expressats.
+
+
+###        3.3.7. Anàlisi de significació biològica
+
+
+
+```{r}
+selectedIDs <- list(dfELIvsNIT$entrez, dfSFIvsNIT$entrez, dfELIvsSFI$entrez)
+names(selectedIDs) <- c("ELIvsNIT", "SFIvsNIT", "ELIvsSFI")
+
+sapply(selectedIDs, length)
+```
+
+
+
+```{r, include=FALSE}
+library(org.Hs.eg.db)
+mapped_genes <- mappedkeys(org.Hs.egPATH)
+```
+
+
+
+
+```{r}
+library(clusterProfiler)
+listOfData <- selectedIDs[1:3]
+comparisonsNames <- names(listOfData)
+
+for (i in 1:length(listOfData)){
+        genesIn <- listOfData[[i]]
+        comparison <- comparisonsNames[i]
+        
+        enrich.KEGG <- enrichKEGG(gene = genesIn,
+                                  organism     = 'hsa',
+                                  pvalueCutoff = 0.1,
+                                  pAdjustMethod = "BH",
+                                  universe = mapped_genes)
+
+        
+        if (length(rownames(enrich.KEGG@result)) != 0) {
+                write.csv(as.data.frame(enrich.KEGG), 
+                          file = paste0("./results/", "enrichKEGG.Results.", comparison,
+                                        ".csv"),
+                          row.names = FALSE)
+                
+                png(file=paste0("./results/","enrichKEGGBarplot.",comparison,".png"),
+                    width = 800)
+                print(barplot(enrich.KEGG, showCategory = 15, font.size = 8, 
+                              title = paste0("Anàlisi d'enriquiment de pathways KEGG per ", comparison)))
+                dev.off()
+                
+                png(file = paste0("./results/","enrichKEGGcnetplot.",comparison,".png"))
+                print(cnetplot(enrich.KEGG, categorySize = "geneNum",
+                               schowCategory = 15, vertex.label.cex = 0.75))
+                dev.off()
+        }
+}
+```
+
+
 
 
 
