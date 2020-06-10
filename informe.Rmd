@@ -26,7 +26,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## 1. Abstract
 
-El projecte Genotype-Tissue Expression (GTEx) pretén crear una gran base de dades pública amb informació de l'expressió i regulació gènica en 54 teixits, obtinguda de gairebé 1000 individus, i inclou dades de RNA-seq.
+El projecte Genotype-Tissue Expression (GTEx, [@1]) pretén crear una gran base de dades pública amb informació de l'expressió i regulació gènica en 54 teixits, obtinguda de gairebé 1000 individus, i inclou dades de RNA-seq.
 
 En aquesta anàlisi, partim d'una selecció aleatòria de dades de RNA-seq de mostres de tiroides tretes del projecte GTEx, tant de teixit sa com de teixit parcialment i extensament infiltrat, per detectar gens diferencialment expressatas i buscar patrons biològicament significatius.
 
@@ -172,14 +172,14 @@ dds
 
 Per fer els primers gràfics del control de qualitat partirem de les dades del *data frame counts*.
 
-Primer transformem les dades en *pseudocounts* utilitzant la fórmula $y = log_{2}(K+1)$. Això ens permetrà visualitzar la dier resultar útils.
+Primer transformem les dades en *pseudocounts* utilitzant la fórmula $y = log_{2}(K+1)$. Això ens permetrà visualitzar millor les possibles diferències entre mostres, ja que les dades crues queden massa compactades al ser representades en gràfics.
 
 ```{r}
 pseudoCounts <- log2(counts + 1)
 ```
 
 
-Generem un boxplot per comparar les mostres.
+Generem un boxplot per comparar els *pseudocounts* entre mostres.
 
 ```{r}
 library(reshape2)
@@ -193,7 +193,6 @@ ylab(expression(log[2](count + 1))) + theme(axis.text.x = element_text(angle = 6
 No observem grans diferències entre les mostres. L'única que potser destaca és la mostra R55G_ELI, que té un número de *counts* inferior a la resta.
 
 
-
 Comparem les mostres també amb un histograma.
 
 ```{r}
@@ -204,14 +203,16 @@ theme(legend.position = "top") + xlab(expression(log[2](count + 1)))
 
 De nou, trobem que en general no hi ha grans variacions entre les mostres, excepte en el cas de R55G_ELI, que en aquest gràfic sí que es veu més clarament diferenciada.
 
-De totes maneres, amb el que podem veure en els gràfics (la distribució dels quartils i els *outliers* al *boxplot*, i la forma de la corva a l'histograma), és probable que això afecti de forma semblant a tots els gens, i en aquest cas quedarà en part corregit amb la normalització.
+De totes maneres, amb el que podem veure en els gràfics (la distribució dels quartils i els *outliers* al *boxplot*, i la forma de la corva a l'histograma), és probable que aquesta diferència afecti de forma semblant a tots els gens, i en aquest cas quedarà en part corregit amb la normalització.
 
-Es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta de mostres, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
+Per altra banda, es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta de mostres, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
 
 
-Per generar la resta de gràfics del control de qualitat ens convé estabilitzar la variança. Ho farem amb la funció *rlog*, i no amb l'alternativa *vst*, ja que el temps de computació no és un problema.
+Per generar la resta de gràfics del control de qualitat ens convé estabilitzar la variança. Ho farem amb la funció *rlog* [@2], i no amb l'alternativa *vst*, ja que el temps de computació no és un problema.
 
-Abans, però, filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1, que no ens aportarien cap informació però aportarien soroll innecessari.
+Abans, però, filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1, que no ens aportarien cap informació però poden generar soroll innecessari.
+
+El número de gens abans i després del filtratge és aquest.
 
 ```{r}
 nrow(dds)
@@ -238,22 +239,26 @@ library("RColorBrewer")
 sampleDistMatrix <- as.matrix(sampleDists)
 rownames(sampleDistMatrix) <- paste( rld$ShortName, rld$sex, sep = " - " )
 colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+colors <- colorRampPalette( rev(brewer.pal(9, "Greens")) )(255)
 pheatmap(sampleDistMatrix,
          clustering_distance_rows = sampleDists,
          clustering_distance_cols = sampleDists,
          col = colors)
 ```
 
+Observem que les mostres es separen en dos grups bastant diferenciats, un d'ells incloent la majoria de mostres del grup ELI i algunes del grup SFI, i l'altre la resta. A part d'aquesta distinció, no hi ha cap mostra que destaqui especialment respecte a les altres.
 
-Gràfic de l'anàlisi de components principals.
+També mirem com es distribueixen les mostres segons l'anàlisi de components principals.
 
 ```{r}
 plotPCA(rld, intgroup = c("Group", "sex"))
 ```
 
 
-Un altre gràfic que podem fer per veure com s'agrupen les mostres és un heatmap de la variança dels 20 gens amb expressió més variable. Per fer-lo, treballem a partir de les dades amb variança reduïda mitjançant RLOG.
+Veiem que la primera component principal explica la major part de la variabilitat (un 61%). En aquest eix, gairebé totes les mostres del grup ELI queden clarament diferenciades de les del grup NIT. Les mostres del grup SFI queden més repartides.
+
+
+Un altre gràfic que podem fer per veure com s'agrupen les mostres és un heatmap de la variança dels 20 gens amb expressió més variable. Per fer-lo, de nou treballem a partir de les dades amb variança reduïda.
 
 ```{r}
 library("genefilter")
@@ -265,13 +270,14 @@ anno <- as.data.frame(colData(rld)[, c("sex","Group")])
 pheatmap(mat, annotation_col = anno)
 ```
 
-Observem que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexes.
+Tornem a observar que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexes.
+
 
 ###        3.3.3. Normalització
 
 Per tenir en compte les diferències sistemàtiques d'orígen tècnic entre mostres, apliquem una normalització. Aquesta consisteix en multiplicar el número de *counts* de cada mostra del nostre *DESeqDataSet* per una constant *C_{j}* que calculem a partir de les dades de *counts* de la mateixa mostra. El tipus de normalització que apliquem variarà en funció del tipus de càlcul que fem per obtenir *C_{j}*.
 
-En aquest cas utilitzarem el mètode RLE (*Relative Log Expression*, Anders and Huber 2010), que, partint de la mitjana geomètrica de l'expressió entre mostres, crea una "mostra de pseudo-referència" sobre la qual centrar les dades de les diferents mostres. Després de centrar les dades, busca la mitjana entre gens per a cada mostra.
+En aquest cas utilitzarem el mètode RLE (*Relative Log Expression*, [@3]), que, partint de la mitjana geomètrica de l'expressió entre mostres, crea una "mostra de pseudo-referència" sobre la qual centrar les dades de les diferents mostres. Després de centrar les dades, busca la mitjana entre gens per a cada mostra.
 
 Aquest mètode es pot implementar amb la funció *estimateSizeFactors* del paquet *DESeq2*.
 
@@ -287,7 +293,7 @@ L'anàlisi d'expressió diferencial consisteix en fer, per a cada contrast d'int
 
 La funció *estimateDispersions* del paquet *DESeq2* fa una estimació dels paràmetres de dispersió de les dades, a partir de la qual podrem obtenir els paràmetres del model.
 
-* Primer fa un càlcul preliminar de la dispersió de cada gen mitjançant una estimació per màxima veosimilitud (McCarthy, Chen, and Smyth 2012).
+* Primer fa un càlcul preliminar de la dispersió de cada gen mitjançant una estimació per màxima veosimilitud [@4].
 
 * Després encongieix els valors acostant-los a la corva ajustada definida per aquesta mateixa estimació preliminar.
 
@@ -296,7 +302,7 @@ dds <- estimateDispersions(dds)
 ```
 
 
-Un cop estimats els paràmetres de dispersió podem passar a fer l'anàlisi d'expressió diferencial en sí. Convé recordar que al crear l'objecte *DESeqDataSet* ja hem especificat els factors que volem incloure a la nostra matriu de disseny.
+Un cop estimats els paràmetres de dispersió podem passar a fer l'anàlisi d'expressió diferencial en sí. Convé recordar que al crear l'objecte *DESeqDataSet* ja hem especificat els factors que volem incloure al nostre disseny.
 
 La funció *nbinomWaldTest* del paquet *DESeq2* fa el càlcul del test per a cada gen dintre de cada comparació, i afegeix els resultats al *DESeqDataSet* com a metadades. Aquests resultats inclouen el Log_{2} del fold-change, el p-valor i el p-valor ajustat del contrast.
 
@@ -308,7 +314,7 @@ dds <- nbinomWaldTest(dds)
 
 Utilitzem la funció *results* per explorar els resultats dels diferents contrasts.
 
-Entre els grups "ELI" i "NIT", mirem primer un resum dels resultats.
+Mirem primer un resum dels resultats del contrast entre els grups "ELI" i "NIT".
 
 ```{r}
 resELIvsNIT <- results(dds, contrast=c("Group","NIT","ELI"))
@@ -327,17 +333,19 @@ head(valSigELIvsNIT[ order(valSigELIvsNIT$log2FoldChange), ], 3)
 ```
 
 
-També fem un MA plot del contrast. Per fer-lo, primer hem d'encongir el log2 dels fold changes amb la funció *lfcShrink*.
+Fem un MA plot del contrast. Per fer-lo, primer hem d'encongir el log2 dels fold changes amb la funció *lfcShrink*.
 
 ```{r}
 shrELIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","ELI"))
 plotMA(shrELIvsNIT, ylim = c(-5, 5))
 ```
 
-Observem que en el teixit infiltrat, respecte el no infiltrat, hi ha un major nombre de gens inhibits que de gens sobreexpressats, i aquests gens inhibits mostren un major fold change i un nivell més alt de significació (un p-valor més petit). Això segurament s'explica perquè les diferències d'expressió en el teixit infiltrat tendeixen per naturalesa a ser en forma d'inhibició de molts gens reguladors.
+Observem que en el teixit infiltrat, respecte el no infiltrat, hi ha un major nombre de gens inhibits que de gens sobreexpressats, i aquests gens inhibits mostren un major fold change i un nivell més alt de significació (un p-valor més petit). Això potser s'explica perquè les diferències d'expressió en el teixit infiltrat tendeixen per naturalesa a ser en forma d'inhibició de molts gens reguladors.
 
 
 Explorem el contrast entre els grups "SFI" i "NIT".
+
+Resum dels resultats:
 
 ```{r}
 resSFIvsNIT <- results(dds, contrast=c("Group","NIT","SFI"))
@@ -345,6 +353,8 @@ resSFIvsNIT <- results(dds, contrast=c("Group","NIT","SFI"))
 summary(resSFIvsNIT)
 ```
 
+
+Gens amb un diferencial d'expressió positiu i negatiu més gran:
 
 ```{r}
 resSigSFIvsNIT <- subset(resSFIvsNIT, padj < 0.1)
@@ -354,7 +364,7 @@ head(valSigSFIvsNIT[ order(valSigSFIvsNIT$log2FoldChange), ], 3)
 ```
 
 
-MA plot.
+MA plot:
 
 ```{r}
 shrSFIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","SFI"))
@@ -368,12 +378,16 @@ En aquest cas també trobem diferències en el mateix sentit: el grup de teixit 
 
 Explorem els resultats del contrast entre els grups "ELI" i "SFI".
 
+Resum dels resultats:
+
 ```{r}
 resELIvsSFI <- results(dds, contrast=c("Group","SFI","ELI"))
 
 summary(resELIvsSFI)
 ```
 
+
+Gens amb un diferencial d'expressió positiu i negatiu més gran:
 
 ```{r}
 resSigELIvsSFI <- subset(resELIvsSFI, padj < 0.1)
@@ -383,18 +397,20 @@ head(valSigELIvsSFI[ order(valSigELIvsSFI$log2FoldChange), ], 3)
 ```
 
 
+MA plot:
+
 ```{r}
 shrELIvsSFI <- lfcShrink(dds, contrast=c("Group","SFI","ELI"))
 
 plotMA(shrELIvsSFI, ylim = c(-5, 5))
 ```
 
-En aquest cas estem comparant un grup de mostres de teixit extensament infiltrat amb un grup de mostres de teixit parcialment infiltrat. Observem que hi ha força gens diferencialment expressats, però en aquest cas no n'hi ha gaires més d'inhibits que de sobreexpressats. Tant el fold change com el nivell de significació dels gens més diferencialment expressats són menors que en les anteriors comparacions.
+En aquest contrast estem comparant un grup de mostres de teixit extensament infiltrat amb un grup de mostres de teixit parcialment infiltrat. Observem que hi ha força gens diferencialment expressats, però en aquest cas no n'hi ha gaires més d'inhibits que de sobreexpressats. Tant el fold change com el nivell de significació dels gens més diferencialment expressats són menors que en les anteriors comparacions.
 
 
 ###        3.3.5. Anotació dels resultats
 
-Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.
+Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.Ho fem a partir del paquet d'anotacions *EnsDb.Hsapiens.v86*.
 
 ```{r}
 library("EnsDb.Hsapiens.v86")
@@ -432,20 +448,13 @@ resSigELIvsSFI$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsS
 ```
 
 
-Ordenació dels resultats.
+Per conservar els llistats de gens obtinguts, els guardem en arxius csv, ordenant abans els resultats segons el p-valor ajustat.
 
 ```{r}
 resOrdELIvsNIT <- resSigELIvsNIT[order(resSigELIvsNIT$padj),]
-
 resOrdSFIvsNIT <- resSigSFIvsNIT[order(resSigSFIvsNIT$padj),]
-
 resOrdELIvsSFI <- resSigELIvsSFI[order(resSigELIvsSFI$padj),]
-```
 
-
-Exportació dels resultats a arxius csv.
-
-```{r}
 dfELIvsNIT <- as.data.frame(resOrdELIvsNIT)
 write.csv(dfELIvsNIT, file = "results/resultsELIvsNIT.csv")
 
@@ -459,30 +468,60 @@ write.csv(dfELIvsSFI, file = "results/resultsELIvsSFI.csv")
 
 ###        3.3.6. Comparació entre comparacions
 
-
 Podem comparar els diferents contrastos per veure quins gens diferencialment expressats tenen en comú.
 
 En aquest cas, farem un diagrama de Venn amb els gens que mostren un  log_{2} fold-change superior a 1.
 
+Per fer-lo, abans hem de crear una matriu que, per a cada gen que apareix diferencialment expressat en algun dels contrastos, ens digui si ho està o no per a cada un dels contrastos (en mostrem aquí només els primers valors).
 
 ```{r}
-selectedELIvsNIT <- (abs(dfELIvsNIT$log2FoldChange) > 1)
-selectedSFIvsNIT <- (abs(dfSFIvsNIT$log2FoldChange) > 1)
-selectedELIvsSFI <- (abs(dfELIvsSFI$log2FoldChange) > 1)
+library(limma)
 
-selected <- cbind(selectedELIvsNIT, selectedSFIvsNIT, selectedELIvsSFI)
+selectedELIvsNIT <- subset(dfELIvsNIT, abs(log2FoldChange) > 1)
+selectedELIvsNIT <- row.names(selectedELIvsNIT)
+
+selectedSFIvsNIT <- subset(dfSFIvsNIT, abs(log2FoldChange) > 1)
+selectedSFIvsNIT <- row.names(selectedSFIvsNIT)
+
+selectedELIvsSFI <- subset(dfELIvsSFI, abs(log2FoldChange) > 1)
+selectedELIvsSFI <- row.names(selectedELIvsSFI)
+
+selectednames <- unique(c(selectedELIvsNIT, selectedSFIvsNIT, selectedELIvsSFI))
+
+selected <- matrix(rep(0, length(selectednames)*3), ncol = 3)
 colnames(selected) <- c("ELI vs NIT", "SFI vs NIT", "ELI vs SFI")
+row.names(selected) <- selectednames
+        
+for (i in 1:length(selectednames)) {
+        if (selectednames[i] %in% selectedELIvsNIT) {
+                selected[i,1] <- 1
+        }
+}
 
-selectedCounts <- vennCounts(selected)
+for (i in 1:length(selectednames)) {
+        if (selectednames[i] %in% selectedSFIvsNIT) {
+                selected[i,2] <- 1
+        }
+}
+
+for (i in 1:length(selectednames)) {
+        if (selectednames[i] %in% selectedELIvsSFI) {
+                selected[i,3] <- 1
+        }
+}
+
+head(selected)
 ```
 
 
 ```{r}
+selectedCounts <- vennCounts(selected)
+
 vennDiagram(selectedCounts, cex=0.9)
 title("Gens diferencialment expressats segons cada comparació.")
 ```
 
-Observem que els dos contrastos que comparen teixit infiltrat amb no infiltrat (ELI vs NIT i SFI vs NIT) comparteixen la majoria de gens diferencialment expressats.
+Observem que la majoria dels gens diferencialment expressats pel grup 
 
 
 ###        3.3.7. Anàlisi de significació biològica
