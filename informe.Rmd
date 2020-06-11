@@ -1,7 +1,7 @@
 ---
 title: "Anàlisi de Dades Òmiques PAC2"
 author: "Oriol Nualart Mundó"
-date: "30/5/2020"
+date: "14/06/2020"
 output: pdf_document
 bibliography: bibliography.bib
 link-citations: true
@@ -18,7 +18,22 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## CONTINGUTS
 
-
+* **[1. Abstract](#abstract)**
+* **[2. Objectius](#objectius)**
+* **[3. Materials i mètodes](#materials-i-mètodes)**  
+    + **[3.1. Disseny de l'experiment](#disseny-de-lexperiment)**
+    + **[3.2. Software utilitzat](#software-utilitzat)**
+    + **[3.3. Procediment d'anàlisi de les dades](#procediment-danàlisi-de-les-dades)**  
+        - **[3.3.1. Preparació de les dades](#preparació-de-les-dades)**
+        - **[3.3.2. Control de qualitat, filtratge i visualització preliminar de les dades](#control-de-qualitat-filtratge-i-visualització-preliminar-de-les-dades)**
+        - **[3.3.3. Normalització](#normalització)**
+        - **[3.3.4. Anàlisi d'expressió diferencial](#anàlisi-dexpressió-diferencial)**
+        - **[3.3.5. Anotació dels resultats](#anotació-dels-resultats)**
+        - **[3.3.6. Comparació entre comparacions](#comparació-entre-comparacions)**
+        - **[3.3.7. Anàlisi de significació biològica](#anàlisi-de-significació-biològica)**
+* **[4. Resultats](#resultats)**
+* **[5. Discussió](#discussió)**
+* **[Referències](#referències)**
 
 ***	
 
@@ -60,20 +75,12 @@ Seleccionarem aleatòriament 10 mostres de cada grup, i a partir d'aquests subco
 
 ###     3.2. Software utilitzat
 
-Fer fer aquesta anàlisi s'ha utilitzat R v3.6.3 (2020-02-29). Els paquets de R i Bioconductor utilitzats són:
+Fer fer aquesta anàlisi s'ha utilitzat R v3.6.3 (2020-02-29). Els paquets de R i Bioconductor utilitzats inclouen:
 
-- stringr
-- dplyr
-- DESeq2
-- reshape2
-- ggplot2
-- pheatmap
-- RColorBrewer
-- genefilter
-- EnsDb.Hsapiens.v86
-- AnnotationDbi
-- org.Hs.eg.db
-- clusterProfiler
+- DESeq2 v1.26.0
+- AnnotationDbi v1.48.0
+- org.Hs.eg.db v3.10.0
+- clusterProfiler v3.14.3
 
 
 ###     3.3. Procediment d'anàlisi de les dades
@@ -168,7 +175,7 @@ dds
 ```
 
 
-###        3.3.2. Control de qualitat i filtratge
+###        3.3.2. Control de qualitat, filtratge i visualització preliminar de les dades
 
 Per fer els primers gràfics del control de qualitat partirem de les dades del *data frame counts*.
 
@@ -257,6 +264,7 @@ plotPCA(rld, intgroup = c("Group", "sex"))
 
 Veiem que la primera component principal explica la major part de la variabilitat (un 61%). En aquest eix, gairebé totes les mostres del grup ELI queden clarament diferenciades de les del grup NIT. Les mostres del grup SFI queden més repartides.
 
+També s'intueix una separació entre les mostres en funció del sexe, tot i que queda bàsicament reflexada en la segona component principal, de pes molt menor (només un 6% de la variabilitat).
 
 Un altre gràfic que podem fer per veure com s'agrupen les mostres és un heatmap de la variança dels 20 gens amb expressió més variable. Per fer-lo, de nou treballem a partir de les dades amb variança reduïda.
 
@@ -267,7 +275,8 @@ topVarGenes <- head(order(rowVars(assay(rld)), decreasing = TRUE), 20)
 mat  <- assay(rld)[topVarGenes, ]
 mat  <- mat - rowMeans(mat)
 anno <- as.data.frame(colData(rld)[, c("sex","Group")])
-pheatmap(mat, annotation_col = anno)
+pheatmap(mat, annotation_col = anno, color = colorRampPalette(rev(brewer.pal(n = 9, name =
+  "YlOrBr")))(100))
 ```
 
 Tornem a observar que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexes.
@@ -275,7 +284,7 @@ Tornem a observar que les mostres s'agrupen principalment en dos grups, un que i
 
 ###        3.3.3. Normalització
 
-Per tenir en compte les diferències sistemàtiques d'orígen tècnic entre mostres, apliquem una normalització. Aquesta consisteix en multiplicar el número de *counts* de cada mostra del nostre *DESeqDataSet* per una constant *C_{j}* que calculem a partir de les dades de *counts* de la mateixa mostra. El tipus de normalització que apliquem variarà en funció del tipus de càlcul que fem per obtenir *C_{j}*.
+Per tenir en compte les diferències sistemàtiques d'orígen tècnic entre mostres, apliquem una normalització. Aquesta consisteix en multiplicar el número de *counts* de cada mostra del nostre *DESeqDataSet* per una constant $C_{j}$ que calculem a partir de les dades de *counts* de la mateixa mostra. El tipus de normalització que apliquem variarà en funció del tipus de càlcul que fem per obtenir $C_{j}$.
 
 En aquest cas utilitzarem el mètode RLE (*Relative Log Expression*, [@3]), que, partint de la mitjana geomètrica de l'expressió entre mostres, crea una "mostra de pseudo-referència" sobre la qual centrar les dades de les diferents mostres. Després de centrar les dades, busca la mitjana entre gens per a cada mostra.
 
@@ -304,7 +313,7 @@ dds <- estimateDispersions(dds)
 
 Un cop estimats els paràmetres de dispersió podem passar a fer l'anàlisi d'expressió diferencial en sí. Convé recordar que al crear l'objecte *DESeqDataSet* ja hem especificat els factors que volem incloure al nostre disseny.
 
-La funció *nbinomWaldTest* del paquet *DESeq2* fa el càlcul del test per a cada gen dintre de cada comparació, i afegeix els resultats al *DESeqDataSet* com a metadades. Aquests resultats inclouen el Log_{2} del fold-change, el p-valor i el p-valor ajustat del contrast.
+La funció *nbinomWaldTest* del paquet *DESeq2* fa el càlcul del test per a cada gen dintre de cada comparació, i afegeix els resultats al *DESeqDataSet* com a metadades. Aquests resultats inclouen el $Log_{2}$ del fold-change, el p-valor i el p-valor ajustat del contrast.
 
 
 ```{r}
@@ -410,40 +419,52 @@ En aquest contrast estem comparant un grup de mostres de teixit extensament infi
 
 ###        3.3.5. Anotació dels resultats
 
-Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.Ho fem a partir del paquet d'anotacions *EnsDb.Hsapiens.v86*.
+Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.Ho fem a partir del paquet d'anotacions *org.Hs.eg.db*.
 
 ```{r}
-library("EnsDb.Hsapiens.v86")
+library("org.Hs.eg.db")
 library("AnnotationDbi")
 
-columns(EnsDb.Hsapiens.v86)
+columns(org.Hs.eg.db)
 ```
 
 ```{r}
-keytypes(EnsDb.Hsapiens.v86)
+keytypes(org.Hs.eg.db)
 ```
 
 
 ```{r}
-resSigELIvsNIT$symbol  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsNIT),
-                                 column="SYMBOL", keytype="GENEID", multiVals="first")
+resSigELIvsNIT$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsNIT),
+                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
 
-resSigELIvsNIT$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsNIT),
-                                 column="ENTREZID", keytype="GENEID",
+resSigELIvsNIT$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsNIT),
+                                 column="ENTREZID", keytype="ENSEMBL",
                                  multiVals="first")
 
-resSigSFIvsNIT$symbol  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigSFIvsNIT),
-                                 column="SYMBOL", keytype="GENEID", multiVals="first")
-
-resSigSFIvsNIT$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigSFIvsNIT),
-                                 column="ENTREZID", keytype="GENEID",
+resSigELIvsNIT$genename  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsNIT),
+                                 column="GENENAME", keytype="ENSEMBL",
                                  multiVals="first")
 
-resSigELIvsSFI$symbol  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsSFI),
-                                 column="SYMBOL", keytype="GENEID", multiVals="first")
+resSigSFIvsNIT$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsNIT),
+                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
 
-resSigELIvsSFI$entrez  <- mapIds(EnsDb.Hsapiens.v86, keys=row.names(resSigELIvsSFI),
-                                 column="ENTREZID", keytype="GENEID",
+resSigSFIvsNIT$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsNIT),
+                                 column="ENTREZID", keytype="ENSEMBL",
+                                 multiVals="first")
+
+resSigSFIvsNIT$genename  <- mapIds(org.Hs.eg.db, keys=row.names(resSigSFIvsNIT),
+                                 column="GENENAME", keytype="ENSEMBL",
+                                 multiVals="first")
+
+resSigELIvsSFI$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsSFI),
+                                 column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+
+resSigELIvsSFI$entrez  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsSFI),
+                                 column="ENTREZID", keytype="ENSEMBL",
+                                 multiVals="first")
+
+resSigELIvsSFI$genename  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsSFI),
+                                 column="GENENAME", keytype="ENSEMBL",
                                  multiVals="first")
 ```
 
@@ -468,7 +489,7 @@ write.csv(dfELIvsSFI, file = "results/resultsELIvsSFI.csv")
 
 ###        3.3.6. Comparació entre comparacions
 
-Podem comparar els diferents contrastos per veure quins gens diferencialment expressats tenen en comú.
+Podem comparar els diferents contrastos per veure quants gens diferencialment expressats tenen en comú.
 
 En aquest cas, farem un diagrama de Venn amb els gens que mostren un  log_{2} fold-change superior a 1.
 
@@ -510,7 +531,7 @@ for (i in 1:length(selectednames)) {
         }
 }
 
-head(selected)
+head(selected, 10)
 ```
 
 
@@ -521,28 +542,39 @@ vennDiagram(selectedCounts, cex=0.9)
 title("Gens diferencialment expressats segons cada comparació.")
 ```
 
-Observem que la majoria dels gens diferencialment expressats pel grup 
+Suposant que els diferents graus d'infiltració en el teixit fossin una gradació contínua que es correspongués exactament amb els gens diferencialment expressats respecte el teixit sa, els gens alterats en teixits amb un grau baix d'infiltració formarien tots part del total de gens alterats en teixits més infiltrats. Això obviament no és així, però sí que hi ha una tendència a que gens alterats en teixits poc infiltrats ho estiguin també en teixits més infiltrats, com podem observar al diagrama.
+
+Veiem doncs que la majoria dels gens diferencialment expressats en la comparació SFI vs NIT, que són relativament pocs, ho estàn també en la comparació ELI vs NIT, però que aquesta última en té molts més. Aquesta diferència en la mida dels grups fa pensar que els teixits ELI tenen un grau d'afectació força més gran que els teixits SFI. 
+
+Pel que fa al contrast ELI vs SFI, podem interpretar la seva relació amb els altres contrastos en el mateix sentit. Una majoria dels gens que hi apareixen alterats ho fan també en el contrast ELI vs NIT, que en té força més.
 
 
 ###        3.3.7. Anàlisi de significació biològica
 
+Farem l'anàlisi de significació biològica a partir de les anotacions de *pathways* de la Kyoto Encyclopedia of Genes and Genomes (KEGG, https://www.genome.jp/kegg/).
 
+Abans de fer-la, però, hem de crear el llistat d'identificadors *Entrez* dels gens diferencialment expressats.
+
+Al fer l'anàlisi d'expressió diferencial ja hem seleccionat els gens de cada comparació amb un p-valor ajustat que hem considerat significatiu (menor de 0,1). Per crear el llistat d'identificadors només els hem d'extreure dels *data frames* corresponents.
 
 ```{r}
 selectedIDs <- list(dfELIvsNIT$entrez, dfSFIvsNIT$entrez, dfELIvsSFI$entrez)
 names(selectedIDs) <- c("ELIvsNIT", "SFIvsNIT", "ELIvsSFI")
-
-sapply(selectedIDs, length)
 ```
 
 
+L'altra cosa que hem de fer abans de començar l'anàlisi de significació biològica és generar un llistat amb tots els gens humans coneguts que tenen almenys una anotació a KEGG. Ho fem amb la funció *mappedkeys* del paquet *AnnotationDbi*, a partir de les anotacions del genoma humà contingudes al paquet *org.Hs.eg.db*.
 
-```{r, include=FALSE}
-library(org.Hs.eg.db)
+
+```{r}
+library(AnnotationDbi)
 mapped_genes <- mappedkeys(org.Hs.egPATH)
 ```
 
 
+L'anàlisi de significació biològica consistirà en detectar, per a cada contrast, *pathways* comuns als diferents gens sobreexpressats. Ho farem utilitzant la funció *enrichKEGG* del paquet *clusterProfiler*, que fa servir tests de sobrerepresentació per generar la llista de *pathways*.  
+
+El codi utilitzat també guarda la llista corresponent a cada comparació, que inclou l'identificador del *pathway* i algunes estadístiques associades, en un arxiu csv, i per cada llista genera un gràfic de barres i un de ret.
 
 
 ```{r}
@@ -582,11 +614,47 @@ for (i in 1:length(listOfData)){
 ```
 
 
+***
+
+## 4. Resultats
+
+Els resultats de l'anàlisi es poden trobar en arxius csv a la carpeta *results* del repositori.
+
+D'una banda, hi ha tres llistats de gens diferencialment expressats, un per cada comparació, que inclouen els identificadors dels gens i les estadístiques de l'expressió diferencial.
+
+També hi ha un llistat de *pathways* de KEGG per cada comparació, de nou amb estadístics associats.
+
+La carpeta de resultats també inclou els gràfics que hem generat a partir dels llistats de *pathways*, que es poden veure a continuació.
+
+```{r, fig.show='hold', fig.align="center", out.width='0.4\\linewidth', fig.cap="Gràfics de ret de termes GO i de pathways per NC vs CPT"}
+library(knitr)
+include_graphics(c("results/enrichKEGGBarplot.ELIvsNIT.png",
+                   "results/enrichKEGGcnetplot.ELIvsNIT.png"))
+```
+
+
+```{r, fig.show='hold', fig.align="center", out.width='0.4\\linewidth', fig.cap="Gràfics de ret de termes GO i de pathways per NC vs CPT"}
+include_graphics(c("results/enrichKEGGBarplot.ELIvsSFI.png",
+                   "results/enrichKEGGcnetplot.ELIvsSFI.png"))
+```
+
+
+```{r, fig.show='hold', fig.align="center", out.width='0.4\\linewidth', fig.cap="Gràfics de ret de termes GO i de pathways per NC vs CPT"}
+include_graphics(c("results/enrichKEGGBarplot.SFIvsNIT.png",
+                   "results/enrichKEGGcnetplot.SFIvsNIT.png"))
+```
+
+
+***
+
+## 5. Discussió
 
 
 
 
 
 
+***
 
+## Referències
 
