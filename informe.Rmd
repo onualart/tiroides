@@ -8,7 +8,7 @@ link-citations: true
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 ```
 
 
@@ -35,26 +35,25 @@ knitr::opts_chunk$set(echo = TRUE)
 * **[5. Discussió](#discussió)**
 * **[Referències](#referències)**
 
-***	
 
 \newpage
 
 ## 1. Abstract
 
-El projecte Genotype-Tissue Expression (GTEx, [@1]) pretén crear una gran base de dades pública amb informació de l'expressió i regulació gènica en 54 teixits, obtinguda de gairebé 1000 individus, i inclou dades de RNA-seq.
+El projecte Genotype-Tissue Expression [@1] pretén crear una gran base de dades pública amb informació de l'expressió i regulació gènica en 54 teixits, obtinguda de gairebé 1000 individus, i inclou dades de RNA-seq.
 
-En aquesta anàlisi, partim d'una selecció aleatòria de dades de RNA-seq de mostres de tiroides tretes del projecte GTEx, tant de teixit sa com de teixit parcialment i extensament infiltrat, per detectar gens diferencialment expressatas i buscar patrons biològicament significatius.
+En aquesta anàlisi, partim d'una selecció aleatòria de dades de RNA-seq de mostres de tiroides del projecte GTEx, tant de teixit sa com de teixit parcialment i extensament infiltrat, per buscar gens diferencialment expressatas i patrons biològicament significatius.
 
 
-***
 
 ## 2. Objectius
 
-L'objectiu d'aquesta anàlisi és identificar gens que s'expressen diferencialment entre els grups de teixits, i a partir d'aquests gens expressats diferencialment, identificar *pathways* alterats en les comparacions.
+- Detectar gens que s'expressen diferencialment entre els grups de teixits.
+
+- A partir d'aquests llistats de gens diferencialment expressats, identificar *pathways* alterats en les comparacions.
 
 Aquesta informació pot aportar coneixements sobre els processos subjacents a la infiltració linfoide de la tiroides, i pot ajudar a identificar potencials dianes terapèutiques.
 
-***
 
 ## 3. Materials i mètodes
 
@@ -68,14 +67,14 @@ Disposem de les dades corresponents a un total de 296 mostres de teixit de tiroi
 
 - 14 corresponen a teixit amb infiltrats limfoides extensos (ELI).
 
-Les mostres corresponen tant a homes com a dones i les dades inclouen el paràmetre del sexe.
+Les mostres pertanyen tant a homes com a dones i les dades inclouen el paràmetre del sexe.
 
 Seleccionarem aleatòriament 10 mostres de cada grup, i a partir d'aquests subconjunts farem l'anàlisi. Aquesta inclourà les tres comparacions possibles entre els tres grups.
 
 
 ###     3.2. Software utilitzat
 
-Fer fer aquesta anàlisi s'ha utilitzat R v3.6.3 (2020-02-29). Els paquets de R i Bioconductor utilitzats inclouen:
+Fer fer aquesta anàlisi s'ha utilitzat R v3.6.3 (2020-02-29) amb Bioconductor v3.10. Els paquets utilitzats inclouen:
 
 - DESeq2 v1.26.0
 - AnnotationDbi v1.48.0
@@ -85,16 +84,18 @@ Fer fer aquesta anàlisi s'ha utilitzat R v3.6.3 (2020-02-29). Els paquets de R 
 
 ###     3.3. Procediment d'anàlisi de les dades
 
-El procediment detallat amb tot el codi de R utilitzat, juntament amb l'*output* dels fragments de codi, es pot trobar a l'arxiu "pipeline.pdf" al repositori de GitHub, generat a partir de l'arxiu de markdown "pipeline.Rmd". El codi pressuposa tenir instal·lats aquests paquets.
+El procediment detallat amb tot el codi de R utilitzat, juntament amb l'*output* dels fragments de codi, es pot trobar a l'arxiu "pipeline.pdf" al repositori de GitHub, generat a partir de l'arxiu de markdown "pipeline.Rmd". El codi pressuposa tenir instal·lats els paquets necessaris.
 
 
 ###        3.3.1. Preparació de les dades
 
-Partim de dos arxius csv, un d'ells amb la taula de *counts*, amb les mostres com a columnes i els gens com a files, i l'altre amb la taula *targets*, que conté la informació sobre les mostres.
+Per que el procés de preparació de les dades quedi reflectit amb detall, s'inclou a l'informe el codi utilitzat en aquest punt.
 
-El primer que fem és carregar els arxius *targets* i *counts* com a *data frames* (que anomenem *targets_big* i *counts_big*). Corregim el nom amb què estan etiquetades les mostres a *targets_big* per que el format es correspongui amb el dels noms que apareixen a *counts_big*. (Ja que el que a *targets_big* apareix com a guions, a *counts_big* són punts.) 
+Partim de dos arxius csv, un d'ells amb la taula de *counts*, amb les mostres com a columnes i els gens com a files, i l'altre amb la taula *targets*, que conté informació sobre les mostres.
 
-```{r}
+El primer que fem és carregar els arxius *targets* i *counts* com a *data frames* (que anomenem *targets_big* i *counts_big*). Corregim el nom amb què estan etiquetades les mostres a *targets_big* per que el format es correspongui amb el dels noms que apareixen a *counts_big*. (Ja que d'entrada el que a *targets_big* apareix com a guions, a *counts_big* són punts.) 
+
+```{r, echo=TRUE}
 targets_big <- read.csv2("./data/targets.csv", header = TRUE, sep = ",")
 
 counts_big <- read.csv2("./data/counts.csv", header = TRUE, sep = ";")
@@ -111,14 +112,14 @@ Un cop tenim els dos *data frames*, fem la selecció aleatòria de les 10 mostre
 
 Primer establim la "llavor" que ens permetrà fer reproduïble la selecció pseudoaleatòria amb la funció *set.seed*.
 
-```{r}
+```{r, echo=TRUE}
 set.seed(123)
 ```
 
 
 Després utilitzem la funció *sample* del paquet *dplyr* per seleccionar els números de fila dintre del *data frame* *targets_big* corresponents a deu mostres a l'atzar del grup "NIT", a deu del grup "SFI" i a deu del grup "ELI". Aquests números de fila els posem en un vector.
 
-```{r}
+```{r, echo=TRUE}
 library(dplyr)
 
 samplNIT <- sample(which(targets_big$Group == "NIT"), 10)
@@ -131,26 +132,26 @@ samples <- c(samplNIT, samplSFI, samplELI)
 
 Tot seguit creem un data frame *targets* reduït que conté només les mostres seleccionades.
 
-```{r}
+```{r, echo=TRUE}
 targets <- targets_big[samples,]
 ```
 
 
 Utilitzant els noms de les mostres segons aquest *data frame targets* reduït, creem un data frame *counts* que contingui només les mostres seleccionades.
 
-```{r}
+```{r, echo=TRUE}
 columns <- targets$Sample_Name
 counts <- counts_big[columns]
 ```
 
 
-Finalment, de cara a poder fer alguns dels procediments de més endavant, corregim el nom de les files i columnes de *counts*.
+Finalment, de cara a poder fer alguns dels procediments de l'anàlisi més endavant, corregim el nom de les files i columnes de *counts*.
 
 Del nom de les files, que correspon a l'identificador Ensembl dels gens, n'eliminem el número de versió de la part final, deixant només l'identificador en sí.
 
 El nom de les columnes, que és l'identificador de les mostres, el substituïm pel "ShortName", que resulta més manejable.
 
-```{r}
+```{r, echo=TRUE}
 X <- c()
 
 for (i in 1:length(counts_big$X)) {
@@ -164,7 +165,7 @@ colnames(counts) <- targets$ShortName
 
 A partir dels dos *data frames* construïm l'objecte *DESeqDataSet* que utilitzarem per fer l'anàlisi (amb la funció *DESeqDataSetFromMatrix* del paquet *DESeq2*). Al crear-lo, especifiquem els factors que volem incloure en el disseny, en aquest cas els paràmetres *sex* i *Group*. Després, amb la funció *factor* especifiquem que volem incloure al disseny els tres nivells del factor *Group*, i que "NIT" és el nivell de referència.
 
-```{r}
+```{r, echo=TRUE}
 library(DESeq2)
 
 dds <- DESeqDataSetFromMatrix(countData = counts,
@@ -213,8 +214,8 @@ De nou, trobem que en general no hi ha grans variacions entre les mostres, excep
 De totes maneres, amb el que podem veure en els gràfics (la distribució dels quartils i els *outliers* al *boxplot*, i la forma de la corva a l'histograma), és probable que aquesta diferència afecti de forma semblant a tots els gens, i en aquest cas quedarà en part corregit amb la normalització.
 
 Per altra banda, es tracta d'una mostra del grup de teixit extensivament infiltrat, i per tant esperem una major variabilitat en els nivells d'expressió gènica. En aquest cas els nivells d'expressió semblen força diferents dels de la resta de mostres, però no podem descartar que la variació sigui deguda a la condició d'estudi -cosa que aportaria informació rellevant-, i per tant optarem per mantenir-la en l'anàlisi.
-
-
+ 
+ 
 Per generar la resta de gràfics del control de qualitat ens convé estabilitzar la variança. Ho farem amb la funció *rlog* [@2], i no amb l'alternativa *vst*, ja que el temps de computació no és un problema.
 
 Abans, però, filtrem el *DESeqDataSet* per eliminar les files amb un número total de *counts* de 0 o 1, que no ens aportarien cap informació però poden generar soroll innecessari.
@@ -254,18 +255,18 @@ pheatmap(sampleDistMatrix,
 ```
 
 Observem que les mostres es separen en dos grups bastant diferenciats, un d'ells incloent la majoria de mostres del grup ELI i algunes del grup SFI, i l'altre la resta. A part d'aquesta distinció, no hi ha cap mostra que destaqui especialment respecte a les altres.
-
+ 
+ 
 També mirem com es distribueixen les mostres segons l'anàlisi de components principals.
 
 ```{r}
 plotPCA(rld, intgroup = c("Group", "sex"))
 ```
-
-
 Veiem que la primera component principal explica la major part de la variabilitat (un 61%). En aquest eix, gairebé totes les mostres del grup ELI queden clarament diferenciades de les del grup NIT. Les mostres del grup SFI queden més repartides.
 
 També s'intueix una separació entre les mostres en funció del sexe, tot i que queda bàsicament reflexada en la segona component principal, de pes molt menor (només un 6% de la variabilitat).
-
+ 
+ 
 Un altre gràfic que podem fer per veure com s'agrupen les mostres és un heatmap de la variança dels 20 gens amb expressió més variable. Per fer-lo, de nou treballem a partir de les dades amb variança reduïda.
 
 ```{r}
@@ -279,16 +280,16 @@ pheatmap(mat, annotation_col = anno, color = colorRampPalette(rev(brewer.pal(n =
   "YlOrBr")))(100))
 ```
 
-Tornem a observar que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexes.
+Tornem a observar que les mostres s'agrupen principalment en dos grups, un que inclou la majoria de mostres del grup ELI i algunes del grup SFI, i un altre que inclou la resta de mostres. També crida l'atenció que dintre d'aquests dos grups les mostres es separen clarament per sexe.
 
 
 ###        3.3.3. Normalització
 
 Per tenir en compte les diferències sistemàtiques d'orígen tècnic entre mostres, apliquem una normalització. Aquesta consisteix en multiplicar el número de *counts* de cada mostra del nostre *DESeqDataSet* per una constant $C_{j}$ que calculem a partir de les dades de *counts* de la mateixa mostra. El tipus de normalització que apliquem variarà en funció del tipus de càlcul que fem per obtenir $C_{j}$.
 
-En aquest cas utilitzarem el mètode RLE (*Relative Log Expression*, [@3]), que, partint de la mitjana geomètrica de l'expressió entre mostres, crea una "mostra de pseudo-referència" sobre la qual centrar les dades de les diferents mostres. Després de centrar les dades, busca la mitjana entre gens per a cada mostra.
+En aquest cas utilitzarem el mètode *Relative Log Expression* o RLE [@3], que, partint de la mitjana geomètrica de l'expressió entre mostres, crea una "mostra de pseudo-referència" sobre la qual centrar les dades de les diferents mostres. Després de centrar les dades, busca la mitjana entre gens per a cada mostra.
 
-Aquest mètode es pot implementar amb la funció *estimateSizeFactors* del paquet *DESeq2*.
+Aquest mètode l'implementem amb la funció *estimateSizeFactors* del paquet *DESeq2*.
 
 
 ```{r}
@@ -349,7 +350,7 @@ shrELIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","ELI"))
 plotMA(shrELIvsNIT, ylim = c(-5, 5))
 ```
 
-Observem que en el teixit infiltrat, respecte el no infiltrat, hi ha un major nombre de gens inhibits que de gens sobreexpressats, i aquests gens inhibits mostren un major fold change i un nivell més alt de significació (un p-valor més petit). Això potser s'explica perquè les diferències d'expressió en el teixit infiltrat tendeixen per naturalesa a ser en forma d'inhibició de molts gens reguladors.
+Observem que en el teixit extensament infiltrat, respecte el no infiltrat, hi ha un major nombre de gens inhibits que de gens sobreexpressats, i aquests gens inhibits mostren un major fold change i un nivell més alt de significació (un p-valor més petit). Això potser s'explica perquè les diferències d'expressió en el teixit infiltrat tendeixen per naturalesa a ser en forma d'inhibició de molts gens reguladors.
 
 
 Explorem el contrast entre els grups "SFI" i "NIT".
@@ -419,21 +420,12 @@ En aquest contrast estem comparant un grup de mostres de teixit extensament infi
 
 ###        3.3.5. Anotació dels resultats
 
-Per poder seguir amb l'anàlisi de les dades, necessitem associar als gens que hem detectat com a diferencialment expressats el *gene symbol* i l'*Entrez ID* corresponents.Ho fem a partir del paquet d'anotacions *org.Hs.eg.db*.
+Per tenir més ben identificats els gens que hem detectat com a diferencialment expressats, hi associem el *gene symbol*, l'*Entrez ID* i el *gene name* corresponents.Ho fem a partir del paquet d'anotacions *org.Hs.eg.db*.
 
 ```{r}
 library("org.Hs.eg.db")
 library("AnnotationDbi")
 
-columns(org.Hs.eg.db)
-```
-
-```{r}
-keytypes(org.Hs.eg.db)
-```
-
-
-```{r}
 resSigELIvsNIT$symbol  <- mapIds(org.Hs.eg.db, keys=row.names(resSigELIvsNIT),
                                  column="SYMBOL", keytype="ENSEMBL", multiVals="first")
 
@@ -491,7 +483,7 @@ write.csv(dfELIvsSFI, file = "results/resultsELIvsSFI.csv")
 
 Podem comparar els diferents contrastos per veure quants gens diferencialment expressats tenen en comú.
 
-En aquest cas, farem un diagrama de Venn amb els gens que mostren un  log_{2} fold-change superior a 1.
+En aquest cas, farem un diagrama de Venn amb els gens que mostren un $log_{2}$ *fold-change* superior a 1.
 
 Per fer-lo, abans hem de crear una matriu que, per a cada gen que apareix diferencialment expressat en algun dels contrastos, ens digui si ho està o no per a cada un dels contrastos (en mostrem aquí només els primers valors).
 
@@ -614,7 +606,6 @@ for (i in 1:length(listOfData)){
 ```
 
 
-***
 
 ## 4. Resultats
 
@@ -626,35 +617,49 @@ També hi ha un llistat de *pathways* de KEGG per cada comparació, de nou amb e
 
 La carpeta de resultats també inclou els gràfics que hem generat a partir dels llistats de *pathways*, que es poden veure a continuació.
 
-```{r, fig.show='hold', fig.align="center", out.width='0.4\\linewidth', fig.cap="Gràfics de ret de termes GO i de pathways per NC vs CPT"}
+
+```{r, fig.show='hold', fig.align="center", out.width='0.8\\linewidth', fig.cap="Gràfic de barres dels pathways per ELI vs NIT"}
 library(knitr)
-include_graphics(c("results/enrichKEGGBarplot.ELIvsNIT.png",
-                   "results/enrichKEGGcnetplot.ELIvsNIT.png"))
+include_graphics("results/enrichKEGGBarplot.ELIvsNIT.png",)
 ```
 
 
-```{r, fig.show='hold', fig.align="center", out.width='0.4\\linewidth', fig.cap="Gràfics de ret de termes GO i de pathways per NC vs CPT"}
-include_graphics(c("results/enrichKEGGBarplot.ELIvsSFI.png",
-                   "results/enrichKEGGcnetplot.ELIvsSFI.png"))
+```{r, fig.show='hold', fig.align="center", out.width='0.6\\linewidth', fig.cap="Gràfic de ret dels pathways per ELI vs NIT"}
+include_graphics("results/enrichKEGGcnetplot.ELIvsNIT.png")
 ```
 
 
-```{r, fig.show='hold', fig.align="center", out.width='0.4\\linewidth', fig.cap="Gràfics de ret de termes GO i de pathways per NC vs CPT"}
-include_graphics(c("results/enrichKEGGBarplot.SFIvsNIT.png",
-                   "results/enrichKEGGcnetplot.SFIvsNIT.png"))
+```{r, fig.show='hold', fig.align="center", out.width='0.8\\linewidth', fig.cap="Gràfic de barres dels pathways per SFI vs NIT"}
+include_graphics("results/enrichKEGGBarplot.SFIvsNIT.png")
+```
+
+```{r, fig.show='hold', fig.align="center", out.width='0.6\\linewidth', fig.cap="Gràfic de ret dels pathways per SFI vs NIT"}
+include_graphics("results/enrichKEGGcnetplot.SFIvsNIT.png")
+```
+
+```{r, fig.show='hold', fig.align="center", out.width='0.8\\linewidth', fig.cap="Gràfic de barres dels pathways per ELI vs SFI"}
+include_graphics("results/enrichKEGGBarplot.ELIvsSFI.png",)
+```
+
+```{r, fig.show='hold', fig.align="center", out.width='0.6\\linewidth', fig.cap="Gràfic de ret dels pathways per ELI vs SFI"}
+include_graphics("results/enrichKEGGcnetplot.ELIvsSFI.png")
 ```
 
 
-***
+\newpage
 
 ## 5. Discussió
 
+De les tres comparacions, només a ELI vs NIT hem identificat un nombre important de *pathways*. En general, tots els indicadors que hem vist durant l'anàlisi apunten que aquest és el contrast amb més diferències d'expressió entre teixits, cosa d'esperar ja que compara les dades dels teixits més infiltrats amb les dels teixits no infiltrats. Entre els *pathways* que identifiquem al analitzar aquest contrast, n'hi destaquen diversos de relacionats amb processos immunes, siguent el *pathway* "Immunodeficiència primària" el de menor p-valor i l'únic que es repeteix en els tres contrastos.
 
+En el cas de SFI vs NIT, destaca el baix nombre de gens diferencialment expressats detectats, en comparació amb els altres contrastos. Això segurament s'expliqui perquè el grau d'infiltració dels teixits del grup SFI sigui força baix al costat del dels teixits del grup ELI, de manera que trobem destacats pocs dels gens que es podrien expressar diferencialment en teixit infiltrat.
 
+El contrast ELI vs SFI detecta bastants gens, però al fer l'anàlisi de significació biològica només s'identifiquen dos *pathways*.
 
+En general, convé tenir en compte que alguns dels gens diferencialment expressats podrien quedar per sobre del llindar de p-valor que ens hem marcat, dificultant així la detecció de patrons d'expressió. Això és especialment rellevant quan els p-valors amb què treballem són relativament alts, com és el cas del contrast SFI vs NIT. En aquest sentit, si utilitzéssim més mostres de la base de dades original segurament obtindriem resultats més sòlids i detectariem més *pathways*.
 
+Un altre aspecte que pot haver influït en els resultats és el sexe dels individus dels que provenen els teixits. Com hem vist al fer l'anàlisi de components principals i el *heatmap* de la variança dels 20 gens amb expressió més variable, sembla que el sexe és un factor amb un cert pes en l'expressió diferencial dels gens. Cal tenir en compte que al fer la sel·lecció aleatòria de les mostres a partir de la base de dades original, no hem estratificat per sexe, de manera que els sexes no han quedat ben repartits entre els grups. Per exemple, només hi ha una mostra del grup de teixit lliure d'infiltracions que sigui d'una dona.
 
-***
 
 ## Referències
 
