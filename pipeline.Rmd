@@ -219,7 +219,7 @@ dds <- nbinomWaldTest(dds)
 - Resum dels resultats del contrast ELI vs NIT
 
 ```{r}
-resELIvsNIT <- results(dds, contrast=c("Group","NIT","ELI"))
+resELIvsNIT <- results(dds, contrast=c("Group","ELI","NIT"))
 
 summary(resELIvsNIT)
 ```
@@ -238,7 +238,7 @@ head(valSigELIvsNIT[ order(valSigELIvsNIT$log2FoldChange), ], 3)
 - MA plot del contrast ELI vs NIT
 
 ```{r}
-shrELIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","ELI"))
+shrELIvsNIT <- lfcShrink(dds, contrast=c("Group","ELI","NIT"))
 plotMA(shrELIvsNIT, ylim = c(-5, 5))
 ```
 
@@ -246,7 +246,7 @@ plotMA(shrELIvsNIT, ylim = c(-5, 5))
 - Resum dels resultats del contrast SFI vs NIT
 
 ```{r}
-resSFIvsNIT <- results(dds, contrast=c("Group","NIT","SFI"))
+resSFIvsNIT <- results(dds, contrast=c("Group","SFI","NIT"))
 
 summary(resSFIvsNIT)
 ```
@@ -264,7 +264,7 @@ head(valSigSFIvsNIT[ order(valSigSFIvsNIT$log2FoldChange), ], 3)
 - MA plot del contrast SFI vs NIT
 
 ```{r}
-shrSFIvsNIT <- lfcShrink(dds, contrast=c("Group","NIT","SFI"))
+shrSFIvsNIT <- lfcShrink(dds, contrast=c("Group","SFI","NIT"))
 
 plotMA(shrSFIvsNIT, ylim = c(-5, 5))
 ```
@@ -273,7 +273,7 @@ plotMA(shrSFIvsNIT, ylim = c(-5, 5))
 - Resum dels resultats del contrast ELI vs SFI
 
 ```{r}
-resELIvsSFI <- results(dds, contrast=c("Group","SFI","ELI"))
+resELIvsSFI <- results(dds, contrast=c("Group","ELI","SFI"))
 
 summary(resELIvsSFI)
 ```
@@ -292,7 +292,7 @@ head(valSigELIvsSFI[ order(valSigELIvsSFI$log2FoldChange), ], 3)
 - MA plot del contrast ELI vs SFI
 
 ```{r}
-shrELIvsSFI <- lfcShrink(dds, contrast=c("Group","SFI","ELI"))
+shrELIvsSFI <- lfcShrink(dds, contrast=c("Group","ELI","SFI"))
 
 plotMA(shrELIvsSFI, ylim = c(-5, 5))
 ```
@@ -475,30 +475,30 @@ for (i in 1:length(listOfData)){
 
 - Imatges dels gràfics de resultats
 
-```{r, fig.show='hold', fig.align="center", out.width='0.7\\linewidth', fig.cap="Gràfic de barres dels pathways per ELI vs NIT"}
+```{r, fig.show='hold', fig.align="center", out.width='0.8\\linewidth', fig.cap="Gràfic de barres dels pathways per ELI vs NIT"}
 library(knitr)
 include_graphics("results/enrichKEGGBarplot.ELIvsNIT.png",)
 ```
 
 
-```{r, fig.show='hold', fig.align="center", out.width='0.7\\linewidth', fig.cap="Gràfic de ret dels pathways per ELI vs NIT"}
+```{r, fig.show='hold', fig.align="center", out.width='0.6\\linewidth', fig.cap="Gràfic de ret dels pathways per ELI vs NIT"}
 include_graphics("results/enrichKEGGcnetplot.ELIvsNIT.png")
 ```
 
 
-```{r, fig.show='hold', fig.align="center", out.width='0.7\\linewidth', fig.cap="Gràfic de barres dels pathways per SFI vs NIT"}
+```{r, fig.show='hold', fig.align="center", out.width='0.8\\linewidth', fig.cap="Gràfic de barres dels pathways per SFI vs NIT"}
 include_graphics("results/enrichKEGGBarplot.SFIvsNIT.png")
 ```
 
-```{r, fig.show='hold', fig.align="center", out.width='0.7\\linewidth', fig.cap="Gràfic de ret dels pathways per SFI vs NIT"}
+```{r, fig.show='hold', fig.align="center", out.width='0.6\\linewidth', fig.cap="Gràfic de ret dels pathways per SFI vs NIT"}
 include_graphics("results/enrichKEGGcnetplot.SFIvsNIT.png")
 ```
 
-```{r, fig.show='hold', fig.align="center", out.width='0.7\\linewidth', fig.cap="Gràfic de barres dels pathways per ELI vs SFI"}
+```{r, fig.show='hold', fig.align="center", out.width='0.8\\linewidth', fig.cap="Gràfic de barres dels pathways per ELI vs SFI"}
 include_graphics("results/enrichKEGGBarplot.ELIvsSFI.png",)
 ```
 
-```{r, fig.show='hold', fig.align="center", out.width='0.7\\linewidth', fig.cap="Gràfic de ret dels pathways per ELI vs SFI"}
+```{r, fig.show='hold', fig.align="center", out.width='0.6\\linewidth', fig.cap="Gràfic de ret dels pathways per ELI vs SFI"}
 include_graphics("results/enrichKEGGcnetplot.ELIvsSFI.png")
 ```
 
